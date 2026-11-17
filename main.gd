@@ -1,0 +1,1959 @@
+extends Node2D
+## 文字倖存者 MVP：選角、一局的流程、生成、攻擊、升級、碰撞與 HUD 都在這裡。
+
+# ===== 遊戲參數（調平衡改這裡）=====
+const GAME_DURATION := 180.0        # 撐過幾秒進入決戰
+const FINAL_BOSSES := ["王", "王", "大弓"]   # 決戰出現的最終王，全部打倒才算贏
+const VOLLEY_SPREAD := 0.7          # 大弓一次放箭的扇形角度（弧度，約 40 度）
+const PLAYER_MAX_HP := 100
+const PLAYER_SPEED := 220.0
+const PLAYER_RADIUS := 14.0
+const BASE_DAMAGE := 10.0           # 斬擊、迴旋刃等的基礎傷害
+const BULLET_DAMAGE := 8.0          # 人的子彈基礎傷害
+const INVINCIBLE_TIME := 1.0        # 被打後無敵幾秒（避免一碰就連續扣血秒死）
+
+# 「人」：遠程射擊
+const FIRE_INTERVAL := 0.5          # 幾秒射一發（每秒 2 次）
+const BULLET_SPEED := 300.0
+const BULLET_LIFETIME := 3.0
+const BULLET_RADIUS := 8.0
+const AIM_RANGE := 1400.0           # 自動瞄準範圍（約畫面寬的一半）
+const MUZZLE_DIST := 34.0           # 槍口在主角前面多遠
+const RECOIL := 6.0                 # 開槍時主角往後退幾像素（只是畫面效果）
+const RECOIL_RECOVER := 80.0        # 後座力每秒回復多少像素
+
+# 「刀」：近身斬擊
+const SLASH_INTERVAL := 0.6         # 幾秒砍一次
+const SLASH_RANGE := 108.0          # 約三個字的距離
+const SLASH_ARC := PI * 5.0 / 6.0    # 扇形角度（150 度）
+
+# Shift 技能
+const SKILL_MAX_CHARGES := 2
+const SKILL_COOLDOWN := 5.0         # 每一格充能要幾秒
+const DASH_DISTANCE := 216.0        # 人：衝刺六格
+const DASH_TIME := 0.12             # 很快，像瞬移
+const JUMP_DISTANCE := 180.0        # 刀：跳五格
+const JUMP_TIME := 0.35
+const JUMP_LAND_RANGE := 72.0       # 落地時兩格內的敵人瞬殺
+const LAND_GRACE := 0.2             # 落地後再多無敵一下
+const DASH_EXTRA_GRACE := 1.0       # 人衝刺結束後再多無敵 1 秒
+
+# 「金」：敵人掉落
+const GOLD_PICKUP_RANGE := 144.0    # 約四個字的距離，進入範圍就被吸過來
+const GOLD_PULL_SPEED := 420.0
+const GOLD_SIZE := 22
+
+const ENEMY_GAP := 2.0              # 敵人彼此多保持的距離，避免疊成一個字
+const HP_GROWTH_PER_MINUTE := 0.10  # 每過一分鐘，新生的敵人血量 +10%
+const BOSS_INTERVAL := 60.0         # 每隔幾秒出一隻王
+const BOSS_LAND_MULT := 5.0         # 刀落地對王的傷害倍率（王不會被瞬殺）
+const RAT_GROUP := 4                # 鼠一次來幾隻
+const BIRD_GROUP := 3               # 鳥一次來幾隻
+const FINAL_SIZE_MULT := 1.3        # 最終王的字放大幾倍（會取最近的 11 的倍數，像素字才銳利）
+const FINAL_HP_MULT := 2.0          # 最終王的血量倍率
+const ARCHER_RANGE := 300.0         # 弓在這個距離內、看得到你就停下來放箭
+const ARROW_INTERVAL := 2.0
+const ARROW_SPEED := 220.0
+const ARROW_DAMAGE := 15
+const ARROW_LIFETIME := 3.0
+
+## 敵人種類。hp 是基礎血量（會隨時間成長），gold 是死掉掉幾個金
+## 鼠的血量要小於子彈基礎傷害 10（三分鐘時 7.5 × 1.3 = 9.75），才會一直被一發打死
+const ENEMY_TYPES := {
+	"敵": {"hp": 15.0, "speed": 90.0, "radius": 14.0, "size": 33, "damage": 30, "gold": 1,
+		"color": Color(1.0, 0.45, 0.45)},
+	"鼠": {"hp": 7.5, "speed": 150.0, "radius": 10.0, "size": 22, "damage": 15, "gold": 1,
+		"color": Color(0.7, 0.25, 0.3)},
+	"甲": {"hp": 60.0, "speed": 55.0, "radius": 15.0, "size": 33, "damage": 30, "gold": 3,
+		"color": Color(0.8, 0.3, 0.3)},
+	"弓": {"hp": 22.5, "speed": 80.0, "radius": 14.0, "size": 33, "damage": 15, "gold": 2,
+		"color": Color(0.65, 0.35, 0.9), "ranged": true},
+	# 鳥：鼠的進階，速度 1.5 倍、血多一點
+	"鳥": {"hp": 10.0, "speed": 225.0, "radius": 10.0, "size": 22, "damage": 15, "gold": 1,
+		"color": Color(0.85, 0.3, 0.55)},
+	# 弩：弓的進階，開始放箭的距離是弓的 1.5 倍、血多一點
+	"弩": {"hp": 30.0, "speed": 80.0, "radius": 14.0, "size": 33, "damage": 15, "gold": 3,
+		"color": Color(0.5, 0.25, 0.85), "ranged": true, "shoot_range": 450.0},
+	# 冑：甲的進階，兩倍血、完全不吃擊退
+	"冑": {"hp": 120.0, "speed": 55.0, "radius": 15.0, "size": 33, "damage": 30, "gold": 5,
+		"color": Color(0.65, 0.2, 0.2), "knock_resist": 0.0},
+	"王": {"hp": 600.0, "speed": 70.0, "radius": 28.0, "size": 66, "damage": 50, "gold": 25,
+		"color": Color(1.0, 0.2, 0.2), "ignores_walls": true, "knock_resist": 0.15, "boss": true},
+	# 最終王之一：會穿牆，保持距離一次放 5 支扇形的矢
+	"大弓": {"hp": 600.0, "speed": 60.0, "radius": 34.0, "size": 55, "damage": 40, "gold": 0,
+		"color": Color(0.65, 0.35, 0.9), "ignores_walls": true, "knock_resist": 0.15, "boss": true,
+		"ranged": true, "shoot_range": 600.0, "volley": 5},
+}
+const SPAWN_INTERVAL_START := 0.4   # 開局幾秒生一隻
+const SPAWN_INTERVAL_END := 0.15    # 三分鐘時幾秒生一隻
+const SPAWN_MARGIN := 60.0          # 在畫面邊緣外多遠生成
+
+# 打擊感
+const KNOCK_BULLET := 160.0         # 子彈打中把敵人往後推多快
+const KNOCK_SLASH := 260.0          # 斬擊把敵人往外推多快
+const KNOCK_DECAY := 900.0          # 擊退速度每秒衰減多少
+const SHAKE_DECAY := 40.0           # 畫面震動每秒衰減多少像素
+const SHARDS := ["丶", "ノ", "一", "丿"]  # 敵人死掉碎成的筆畫
+
+# 全畫面調色：整體亮度與彩度（1 = 原本）。畫面太刺眼就往下調
+const SCREEN_BRIGHTNESS := 0.85
+const SCREEN_SATURATION := 0.8
+
+const GLYPH_SIZE := 33              # 像素字型 11px 的 3 倍，保持銳利
+const BULLET_SIZE := 22
+const GRID_CELL := 48.0             # 碰撞用的空間格子，要 >= 最大碰撞距離
+
+const COLOR_PLAYER := Color.WHITE
+const COLOR_ARROW := Color(0.65, 0.35, 0.9)
+const COLOR_ENEMY_BOSS := Color(1.0, 0.2, 0.2)
+const COLOR_CHEST := Color(0.45, 0.85, 1.0)
+const COLOR_BULLET := Color(1.0, 0.9, 0.4)
+const COLOR_GOLD := Color(1.0, 0.75, 0.2)
+
+# 天罰：滑鼠左鍵點擊，該位置三格內的小兵秒殺（王只吃重傷害）
+const SMITE_RADIUS := 108.0         # 只用來畫中間那圈「罰」
+const COLOR_SMITE := Color(0.75, 0.9, 1.0)
+
+# 寶箱：每 30 秒在附近隨機出現，王死掉也會掉；打開後二選一強化「彈」或「刀」
+const CHEST_INTERVAL := 30.0
+const CHEST_MIN_DIST := 400.0
+const CHEST_MAX_DIST := 1000.0
+const CHEST_OPEN_RANGE := 30.0
+
+# 強化線（寶箱給的）：兩條線各自 Lv 1~5，同一條往深走或兩條混著走
+const LINE_MAX := 5
+const SPREAD_DEG := [0.0, 15.0, 25.0, 35.0, 45.0]   # 人＋彈：各級散射總角度
+const ORBIT_RADIUS := 70.0          # 人＋刀：迴旋刃內圈半徑
+const ORBIT_RING_GAP := 50.0        # Lv2 外圈比內圈遠多少
+const ORBIT_PER_RING := 4           # 每一圈幾把刃
+const FLY_BARRAGE := 8              # Lv5：爆炸後一整圈射出幾把刃
+const ORBIT_SPEED := 3.0            # 人＋刀：每秒轉幾弧度
+const ORBIT_HIT_CD := 0.4           # 同一把刃多久能再打同一隻敵人
+const SPIN_EVERY := 1.0             # Lv3 疾旋：每轉 1 秒……
+const SPIN_TIME := 1.0              # ……就快速旋轉 1 秒
+const SPIN_MULT := 3.0              # 快速旋轉是平常的幾倍速
+const SPIN_HIT_CD := 0.15           # 快速旋轉時同一隻敵人多久能再被打
+const BURST_GROW := 72.0            # Lv4 爆旋：刃往外擴大兩格
+const BURST_TIME := 0.3             # 擴大再收回的時間（擴到最大時爆炸）
+const BURST_MULT := 2.0             # 爆炸傷害倍率
+const FLY_SPEED_MULT := 2.0         # Lv5 飛刃：速度是子彈的幾倍
+const FLY_RANGE_MULT := 2.0         # Lv5 飛刃：飛行距離是子彈的幾倍
+const ORBIT_SIZE := 22              # 人＋刀：「刃」字大小
+const COMBO_DELAY := 0.12           # 刀＋刀：連擊之間的間隔
+const COMBO_GROW := 36.0            # 刀＋刀 Lv2：連斬第二刀比第一刀大一格
+const SCISSOR_OVERLAP := PI / 6.0   # 刀＋刀 Lv4：雙刀中間重疊 30 度
+const AFTERIMAGE_ARC := PI * 1.5    # 刀＋刀 Lv5 殘影斬：270 度
+const AFTERIMAGE_TIME := 0.5        # 殘影斬殘留幾秒
+const ZONE_TICK := 0.5              # 殘留的斬擊每幾秒打一次
+const WAVE_INTERVAL := 1.0          # 刀＋彈：多久發一次（會乘上攻擊速度）
+const WAVE_SPEED := 480.0
+const WAVE_RANGE := 288.0           # Lv1~3：飛 8 格
+const WAVE_PIERCE := 2              # 斬擊波穿透幾個（打到第 3 個就消失）
+const WAVE_BIG_SCALE := 2.0         # 大斬擊波是一般的幾倍
+const WAVE_RANGE_LONG := 540.0      # Lv4：飛 15 格
+const WAVE_SPEED_FAST := 800.0      # Lv4：快速斬擊波
+const WAVE_BURST_GAP := 0.07        # Lv4：四連發之間的間隔
+const RIFT_TARGETS := 4             # Lv5 空間斬擊：鎖定畫面內最近的幾個敵人
+const RIFT_RADIUS := 40.0           # 空間斬擊的半徑
+const RIFT_TIME := 0.5              # 空間斬擊停留幾秒
+const COLOR_RIFT := Color(0.8, 0.6, 1.0)
+
+## 卡片上的名稱與說明：[角色][線] -> 名稱、各級說明（index = 升到第幾級）
+const POWER_INFO := {
+	"人": {
+		"彈": {"name": "彈道", "desc": ["", "", "散射 3 發子彈", "散射 5 發，角度更廣", "散射 7 發", "散射 9 發，扇形 45°"]},
+		"刀": {"name": "迴旋刃", "desc": ["",
+			"4 把「刃」繞身旋轉，碰到就砍，也能擋下飛來的矢",
+			"雙圈：內外兩圈，各 4 把",
+			"疾旋：一般速度 1 秒、加速 1 秒，輪流",
+			"爆旋：加速完兩圈往外擴大，以外圈爆炸一大圈",
+			"刃幕：爆炸後往四周射出一整圈刃，撞牆反彈，穿透吃「穿」升級"]},
+	},
+	"刀": {
+		"刀": {"name": "刀法", "desc": ["", "",
+			"連斬：反方向再斬一次，第二刀大一格",
+			"三連斬：連斬後換手再斬一次，一刀比一刀大；斬擊可以砍掉飛來的矢",
+			"雙刀連斬：兩把刀像剪刀合起來，再反過來打開，範圍和三連斬後兩刀一樣大（共四刀）",
+			"殘影斬：單一 270° 斬擊，殘留 0.5 秒，結束時再打一次，也會砍掉飛進來的矢"]},
+		"彈": {"name": "斬擊波", "desc": ["",
+			"斬擊波：自動射出飛 8 格的斬擊波，可穿透 2 個敵人",
+			"大斬擊波：兩倍大",
+			"四方斬擊：同時往四個方向射出大斬擊波",
+			"四連斬擊：快速連射 4 道大斬擊波，飛 15 格，鎖定最近 4 個敵人",
+			"空間斬擊：直接在畫面內最近 4 個敵人身上出現斬擊"]},
+	},
+}
+
+# 升級：吃「金」累積經驗，升級時三選一
+const XP_FIRST_LEVEL := 6           # 升到 2 級要幾個金
+const XP_STEP := 4                  # 之後每級多要幾個
+const UPGRADE_MAX_LEVEL := 5
+## who：all = 兩個角色都有，否則只給那個角色
+const UPGRADES := [
+	{"id": "power",  "icon": "力", "name": "攻擊力",   "desc": "傷害 +20%", "who": "all"},
+	{"id": "haste",  "icon": "疾", "name": "攻擊速度", "desc": "攻擊速度 +15%", "who": "all"},
+	{"id": "pierce", "icon": "穿", "name": "穿透",     "desc": "子彈多穿過 1 個敵人", "who": "人"},
+	{"id": "reach",  "icon": "廣", "name": "斬擊範圍", "desc": "斬擊距離 +20%", "who": "刀"},
+	{"id": "speed",  "icon": "速", "name": "移動速度", "desc": "移動速度 +12%", "who": "all"},
+	{"id": "vital",  "icon": "體", "name": "體魄",     "desc": "血量上限 +20，並回 10 血", "who": "all"},
+	{"id": "magnet", "icon": "磁", "name": "吸金",     "desc": "吸金範圍 +35%", "who": "all"},
+	{"id": "focus",  "icon": "息", "name": "調息",     "desc": "技能冷卻 -15%", "who": "all"},
+]
+
+const CHARACTERS := [
+	{"glyph": "人", "name": "遠程射擊", "desc": "自動射向最近的敵人\nShift：往前衝刺六格，過程與結束後 1 秒無敵"},
+	{"glyph": "刀", "name": "近身斬擊", "desc": "扇形揮砍，一次砍多個\nShift：跳五格，落地震殺周圍敵人"},
+]
+
+enum State { SELECT, PLAYING, LEVEL_UP, DEAD, WON, POWER_UP }
+
+
+class Bullet:
+	var node: Glyph
+	var vel: Vector2
+	var life: float
+	var pierce: int                 # 還能再穿過幾個敵人
+	var damage: float
+	var hits: Array = []            # 已經打過的敵人，穿透時不重複打
+
+
+class Chest:
+	var node: Glyph
+
+
+## 刀＋彈：飛行中的斬擊波
+class Wave:
+	var node: WaveFx
+	var dir: Vector2
+	var big := false
+	var reach := 0.0
+	var speed := 0.0
+	var traveled := 0.0
+	var hits := {}              # 已經打過的敵人
+	var pierce := WAVE_PIERCE   # 還能再穿過幾個
+
+
+## 殘留在地上的斬擊（殘影斬、空間斬擊）：每 0.5 秒對範圍內的敵人造成一次傷害
+class Zone:
+	var origin: Vector2
+	var facing: float
+	var arc: float
+	var reach: float
+	var life: float
+	var tick: float
+	var check_walls: bool
+	var cuts_arrows: bool       # 殘影斬：殘留期間飛進來的矢也會被砍掉
+
+
+## 跟著滑鼠的天罰範圍圈；冷卻中變暗
+class SmiteRing:
+	extends Node2D
+	var radius := 108.0
+	var armed := true
+
+	func _draw() -> void:
+		var c := Color(0.75, 0.9, 1.0, 0.5 if armed else 0.15)
+		draw_arc(Vector2.ZERO, radius, 0.0, TAU, 48, c, 2.0)
+
+
+## 會淡出的文字特效（斬擊、殘影、落地衝擊）
+class Fx:
+	var nodes: Array[Glyph] = []
+	var life: float
+	var duration: float
+
+
+static var last_character := 0      # 重開時記得上次選的角色
+
+var state := State.SELECT
+var character := 0
+var elapsed := 0.0
+var kills := 0
+var gold := 0
+var hp := PLAYER_MAX_HP
+var level := 1
+var xp := 0                        # 這一級已經吃到的金
+var pending_levels := 0            # 一次吃很多金時，可能連升好幾級
+var pending_power := 0             # 還沒選的寶箱強化
+var power_choices: Array = []      # 寶箱卡片上的選項（"彈" / "刀" / "癒"）
+var power_cursor := 0
+var bullet_lv := 1                 # 強化線「彈」
+var blade_lv := 1                  # 強化線「刀」
+var combo: Array = []              # 刀＋刀：排好的後續連擊
+var zones: Array[Zone] = []
+var wave_cd := 0.0
+var wave_queue: Array = []         # 刀＋彈 Lv4：排好的四連發
+var orbit_angle := 0.0
+var orbit_blades: Array[Glyph] = []
+var orbit_hits := {}               # 敵人 id -> 上次被迴旋刃打到的時間
+var orbit_clock := 0.0             # 疾旋的計時（0~5 秒正常，5~6 秒快速）
+var burst_t := -1.0                # 爆旋進行中的時間，< 0 代表沒有在爆旋
+var burst_done := false            # 這次爆旋是否已經爆炸過
+var flying_blades: Array[Bullet] = []   # Lv5 飛刃
+var waves: Array[Wave] = []
+var upgrade_choices: Array = []    # 升級畫面上的三個選項
+var upgrade_cursor := 0
+var upgrade_levels := {}           # id -> 已經升了幾級
+
+# 會被升級改變的數值
+var attack_mult := 1.0
+var damage_mult := 1.0
+var bullet_pierce := 0
+var slash_range := SLASH_RANGE
+var player_speed := PLAYER_SPEED
+var max_hp := PLAYER_MAX_HP
+var pickup_range := GOLD_PICKUP_RANGE
+var skill_cooldown := SKILL_COOLDOWN
+var invincible := 0.0
+var attack_cd := 0.0
+var spawn_cd := 0.0
+var facing_dir := Vector2.RIGHT    # 最後一次移動的方向，技能往這裡放
+var skill_charges := SKILL_MAX_CHARGES
+var skill_recharge := 0.0
+var skill_time := 0.0              # > 0 代表正在衝刺 / 跳躍中（無敵）
+var skill_duration := 0.0
+var skill_from := Vector2.ZERO
+var skill_to := Vector2.ZERO
+var land_grace := 0.0
+var next_boss_time := BOSS_INTERVAL
+var next_chest_time := CHEST_INTERVAL
+var final_phase := false           # 三分鐘後的決戰：不再掉金、不再出寶箱
+var final_bosses: Array[Enemy] = []
+var smite_used := false            # 天罰一局只能用一次
+
+var font: FontFile
+var cam: Camera2D
+var particles: TextParticles
+var hurt_overlay: ColorRect         # 受傷時整個畫面閃紅
+var shake := 0.0                    # 目前畫面震動強度（像素）
+var hitstop := 0.0                  # 大招命中時畫面停頓一下
+var terrain: Terrain
+var player: Glyph
+var enemies: Array[Enemy] = []
+var bullets: Array[Bullet] = []
+var arrows: Array[Bullet] = []      # 弓射出來的箭
+var effects: Array[Fx] = []
+var golds: Array[Glyph] = []
+var chests: Array[Chest] = []
+var chest_pointer: Glyph            # 寶箱在畫面外時，畫面邊緣的提示
+var boss_pointers: Array[Glyph] = []  # 王在畫面外時，畫面邊緣的提示（一隻王一個）
+var player_bar: Node2D              # 主角頭上的血條
+var smite_ring: SmiteRing           # 滑鼠位置的天罰範圍圈
+var grid := {}  # Vector2i -> Array[Enemy]
+
+var hud_hp: Label
+var hud_skill: Label
+var hud_key_skill: Label            # 「技」下面的操作鍵說明
+var hud_key_smite: Label            # 「天」下面的操作鍵說明
+var hud_power: Label
+var hud_time: Label
+var hud_kills: Label
+var menu: Control                  # 選角 / 升級 / 結束畫面共用
+var menu_label: Label
+var level_cards: UpgradeCards       # 升級卡片畫面
+
+
+func _ready() -> void:
+	font = _load_pixel_font()
+	Glyph.font = font
+
+	terrain = Terrain.new()
+	terrain.font = font
+	terrain.font_size = GLYPH_SIZE
+	add_child(terrain)
+
+	character = last_character
+	player = Glyph.new().setup(CHARACTERS[character].glyph, GLYPH_SIZE, COLOR_PLAYER)
+	player.z_index = 10
+	add_child(player)
+	cam = Camera2D.new()
+	player.add_child(cam)
+	player_bar = Node2D.new()
+	player_bar.draw.connect(_draw_player_bar)
+	player.add_child(player_bar)
+
+	particles = TextParticles.new()
+	particles.z_index = 8
+	add_child(particles)
+
+	smite_ring = SmiteRing.new()
+	smite_ring.radius = SMITE_RADIUS
+	smite_ring.z_index = 15
+	smite_ring.visible = false
+	add_child(smite_ring)
+
+	chest_pointer = Glyph.new().setup("寶", BULLET_SIZE, COLOR_CHEST)
+	chest_pointer.modulate.a = 0.7
+	chest_pointer.z_index = 20
+	chest_pointer.visible = false
+	add_child(chest_pointer)
+
+	_setup_input()
+	_build_hud()
+	_build_screen_filter()
+	terrain.follow(player.position)
+	terrain.update_flow(player.position)
+	_update_hud()
+	_show_select()
+
+
+func _process(delta: float) -> void:
+	_update_feedback(delta)
+	match state:
+		State.SELECT:
+			_process_select()
+			return
+		State.LEVEL_UP:
+			_process_level_up()
+			return
+		State.POWER_UP:
+			_process_power_up()
+			return
+		State.DEAD, State.WON:
+			if Input.is_action_just_pressed("confirm"):
+				get_tree().reload_current_scene()
+			return
+
+	if hitstop > 0.0:
+		hitstop -= delta
+		return
+
+	elapsed += delta
+	if not final_phase and elapsed >= GAME_DURATION:
+		_start_final_phase()
+	if final_phase and final_bosses.is_empty():
+		_end(State.WON)
+		return
+
+	if player.offset != Vector2.ZERO:
+		player.offset = player.offset.move_toward(Vector2.ZERO, RECOIL_RECOVER * delta)
+		player.queue_redraw()
+	var old_cell := terrain.cell_of(player.position)
+	if not _update_skill(delta):
+		_move_player(delta)
+	if terrain.cell_of(player.position) != old_cell:
+		terrain.update_flow(player.position)
+	_spawn_enemies(delta)
+	_build_grid()
+	_move_enemies(delta)
+	_build_grid()
+	_attack(delta)
+	_move_bullets(delta)
+	_move_waves(delta)
+	_update_orbit(delta)
+	_move_flying_blades(delta)
+	_move_arrows(delta)
+	_update_effects(delta)
+	_update_gold(delta)
+	_update_chests()
+	_update_smite(delta)
+	_check_player_hit(delta)
+
+	terrain.follow(player.position)
+	_update_hud()
+	if state == State.PLAYING and pending_levels > 0:
+		_open_level_up()
+	elif state == State.PLAYING and pending_power > 0:
+		_open_power_up()
+
+
+func _load_pixel_font() -> FontFile:
+	var f: FontFile = load("res://fonts/Cubic_11.ttf")
+	# 關掉反鋸齒與次像素，像素字才會銳利
+	f.antialiasing = TextServer.FONT_ANTIALIASING_NONE
+	f.hinting = TextServer.HINTING_NONE
+	f.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
+	# 萬一有字不在字型裡，退回系統字型
+	var fallback := SystemFont.new()
+	fallback.font_names = PackedStringArray(["PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC"])
+	f.fallbacks = [fallback]
+	return f
+
+
+## 方向鍵和 WASD 都能移動
+func _setup_input() -> void:
+	var keys := {
+		"move_left": [KEY_LEFT, KEY_A],
+		"move_right": [KEY_RIGHT, KEY_D],
+		"move_up": [KEY_UP, KEY_W],
+		"move_down": [KEY_DOWN, KEY_S],
+		"skill": [KEY_SHIFT],
+		"confirm": [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER],  # 選單確定：Space 左手就按得到，Enter 也可以
+	}
+	for action: String in keys:
+		if InputMap.has_action(action):
+			continue
+		InputMap.add_action(action)
+		for k: Key in keys[action]:
+			var ev := InputEventKey.new()
+			ev.physical_keycode = k
+			InputMap.action_add_event(action, ev)
+	if not InputMap.has_action("smite"):
+		InputMap.add_action("smite")
+		var click := InputEventMouseButton.new()
+		click.button_index = MOUSE_BUTTON_LEFT
+		InputMap.action_add_event("smite", click)
+
+
+# ---------- 選角 ----------
+
+func _process_select() -> void:
+	var step := 0
+	if Input.is_action_just_pressed("move_left"):
+		step = -1
+	elif Input.is_action_just_pressed("move_right"):
+		step = 1
+	if step != 0:
+		character = posmod(character + step, CHARACTERS.size())
+		player.set_text(CHARACTERS[character].glyph)
+		_show_select()
+	if Input.is_action_just_pressed("confirm"):
+		last_character = character
+		if _is_blade():
+			bullet_lv = 0   # 刀一開始沒有斬擊波，第一次拿「彈」就是斬擊波 Lv1
+		else:
+			blade_lv = 0    # 人一開始沒有迴旋刃，第一次拿「刀」就是迴旋刃 Lv1
+		level_cards.visible = false
+		state = State.PLAYING
+
+
+func _show_select() -> void:
+	var cards := []
+	for c: Dictionary in CHARACTERS:
+		cards.append({"icon": c.glyph, "name": c.name, "sub": "", "desc": c.desc})
+	level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選擇　Space / Enter 開始")
+
+
+# ---------- 玩家 ----------
+
+func _move_player(delta: float) -> void:
+	var dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	if dir != Vector2.ZERO:
+		facing_dir = dir.normalized()
+	player.position = terrain.slide(player.position, dir * player_speed * delta, PLAYER_RADIUS)
+
+
+func _check_player_hit(delta: float) -> void:
+	if land_grace > 0.0:
+		land_grace -= delta
+		# 衝刺後的無敵也閃爍，讓玩家知道還在無敵
+		if invincible <= 0.0:
+			player.modulate.a = 0.5 if int(land_grace * 10.0) % 2 == 0 else 1.0
+			if land_grace <= 0.0:
+				player.modulate.a = 1.0
+	if invincible > 0.0:
+		invincible -= delta
+		# 無敵期間閃爍
+		player.modulate.a = 0.3 if int(invincible * 10.0) % 2 == 0 else 1.0
+		if invincible <= 0.0:
+			player.modulate.a = 1.0
+	if not _player_vulnerable():
+		return
+	for e: Enemy in _nearby(player.position):
+		if e.position.distance_to(player.position) < PLAYER_RADIUS + e.radius:
+			_hurt_player(e.damage)
+			return
+
+
+## 技能中、落地後、剛被打過都不會受傷
+func _player_vulnerable() -> bool:
+	return skill_time <= 0.0 and land_grace <= 0.0 and invincible <= 0.0
+
+
+func _hurt_player(amount: int) -> void:
+	if not _player_vulnerable():
+		return
+	hp -= amount
+	invincible = INVINCIBLE_TIME
+	_shake(10.0)
+	_hitstop(0.06)
+	hurt_overlay.color = Color(1, 0, 0, 0.3)
+	if hp <= 0:
+		hp = 0
+		_end(State.DEAD)
+
+
+# ---------- Shift 技能 ----------
+
+## 處理充能、施放與進行中的技能。技能進行中回傳 true（這幀不吃移動輸入）
+func _update_skill(delta: float) -> bool:
+	if skill_charges < SKILL_MAX_CHARGES:
+		skill_recharge -= delta
+		if skill_recharge <= 0.0:
+			skill_charges += 1
+			skill_recharge = skill_cooldown if skill_charges < SKILL_MAX_CHARGES else 0.0
+
+	if skill_time > 0.0:
+		_step_skill(delta)
+		return true
+
+	if Input.is_action_just_pressed("skill") and skill_charges > 0:
+		if skill_charges == SKILL_MAX_CHARGES:
+			skill_recharge = skill_cooldown
+		skill_charges -= 1
+		_start_skill()
+		return true
+	return false
+
+
+func _start_skill() -> void:
+	var dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	if dir != Vector2.ZERO:
+		facing_dir = dir.normalized()
+	skill_from = player.position
+	if _is_blade():
+		# 刀用跳的，可以跳過牆；落點在牆裡就往回找空地
+		skill_duration = JUMP_TIME
+		skill_to = skill_from + facing_dir * JUMP_DISTANCE
+		while skill_to.distance_to(skill_from) > 1.0 and terrain.overlaps_wall(skill_to, PLAYER_RADIUS):
+			skill_to = skill_to.move_toward(skill_from, 6.0)
+	else:
+		# 人是貼地衝刺，會被牆擋下
+		skill_duration = DASH_TIME
+		skill_to = skill_from + facing_dir * DASH_DISTANCE
+	skill_time = skill_duration
+	invincible = 0.0
+	player.modulate.a = 1.0
+
+
+func _step_skill(delta: float) -> void:
+	var prev := player.position
+	skill_time = maxf(skill_time - delta, 0.0)
+	var t := 1.0 - skill_time / skill_duration
+
+	if _is_blade():
+		player.position = skill_from.lerp(skill_to, t)
+		player.scale = Vector2.ONE * (1.0 + 0.6 * sin(t * PI))  # 跳起來變大，看起來離地
+		if skill_time <= 0.0:
+			player.scale = Vector2.ONE
+			_land()
+	else:
+		# 分小步移動，避免一幀走太遠穿牆
+		var target := skill_from.lerp(skill_to, t)
+		var motion := target - prev
+		var steps := int(ceil(motion.length() / 8.0))
+		for i in steps:
+			player.position = terrain.slide(player.position, motion / steps, PLAYER_RADIUS)
+		# 殘影
+		var fx := Fx.new()
+		fx.nodes.append(_fx_glyph("人", prev, GLYPH_SIZE))
+		_add_fx(fx, 0.2)
+		if skill_time <= 0.0:
+			land_grace = LAND_GRACE + DASH_EXTRA_GRACE
+
+
+## 刀落地：兩格內的敵人瞬殺（王只吃重傷害）
+func _land() -> void:
+	land_grace = LAND_GRACE
+	for e: Enemy in enemies.duplicate():
+		if e.position.distance_to(player.position) > JUMP_LAND_RANGE + e.radius:
+			continue
+		if e.is_boss:
+			_damage_enemy(e, _damage() * BOSS_LAND_MULT)
+		else:
+			_kill_enemy(e)
+	var fx := Fx.new()
+	var count := 8
+	for i in count:
+		var a := TAU * i / count
+		fx.nodes.append(_fx_glyph("震", player.position + Vector2.from_angle(a) * JUMP_LAND_RANGE * 0.8))
+	_add_fx(fx, 0.25)
+	_shake(8.0)
+	_hitstop(0.05)
+
+
+func _is_blade() -> bool:
+	return CHARACTERS[character].glyph == "刀"
+
+
+# ---------- 決戰 ----------
+
+## 三分鐘到：出現最終王（兩隻王、一隻大弓），打倒全部才算贏；之後不再掉金、不再出寶箱
+func _start_final_phase() -> void:
+	final_phase = true
+	for i in FINAL_BOSSES.size():
+		var pos := _find_spawn_point()
+		if pos == Vector2.INF:
+			pos = player.position + Vector2.from_angle(TAU * i / FINAL_BOSSES.size()) * get_viewport_rect().size.x * 0.55
+		_spawn_enemy(FINAL_BOSSES[i], pos)
+		var boss: Enemy = enemies[-1]
+		boss.font_size = int(roundf(boss.font_size * FINAL_SIZE_MULT / 11.0)) * 11
+		boss.radius *= FINAL_SIZE_MULT
+		boss.max_hp *= FINAL_HP_MULT
+		boss.hp = boss.max_hp
+		boss.queue_redraw()
+		final_bosses.append(boss)
+	var banner := particles.add("決戰", player.position + Vector2(0, -120), Vector2(0, -20), 2.0, 66, COLOR_ENEMY_BOSS)
+	banner.grow = 0.2
+	_shake(12.0)
+
+
+# ---------- 敵人 ----------
+
+func _spawn_enemies(delta: float) -> void:
+	# 每分鐘來一隻王
+	if not final_phase and elapsed >= next_boss_time and next_boss_time < GAME_DURATION:
+		next_boss_time += BOSS_INTERVAL
+		var bp := _find_spawn_point()
+		if bp != Vector2.INF:
+			_spawn_enemy("王", bp)
+
+	spawn_cd -= delta
+	if spawn_cd > 0.0:
+		return
+	spawn_cd = lerpf(SPAWN_INTERVAL_START, SPAWN_INTERVAL_END, minf(elapsed / GAME_DURATION, 1.0))
+	var pos := _find_spawn_point()
+	if pos == Vector2.INF:
+		return
+	var kind := _pick_enemy_type()
+	if kind == "鼠" or kind == "鳥":
+		for i in (RAT_GROUP if kind == "鼠" else BIRD_GROUP):
+			var p := pos + Vector2(randf_range(-12, 12), randf_range(-12, 12))
+			if terrain.overlaps_wall(p, ENEMY_TYPES[kind]["radius"]):
+				p = pos
+			_spawn_enemy(kind, p)
+	else:
+		_spawn_enemy(kind, pos)
+
+
+## 找一個不是牆、而且走得到玩家的格子，回傳格子正中間
+## （生在格子邊緣的話，字的身體會卡進隔壁的牆）
+func _find_spawn_point() -> Vector2:
+	# 在畫面邊緣外一圈的隨機位置（長方形的周長上），不管畫面多大都剛好在看不到的地方
+	var half := get_viewport_rect().size / 2.0 + Vector2(SPAWN_MARGIN, SPAWN_MARGIN)
+	for i in 12:
+		var p: Vector2
+		var along := randf() * (half.x + half.y) * 2.0
+		if along < half.x * 2.0:
+			p = Vector2(along - half.x, half.y * (1.0 if randf() < 0.5 else -1.0))
+		else:
+			p = Vector2(half.x * (1.0 if randf() < 0.5 else -1.0), along - half.x * 2.0 - half.y)
+		var c := terrain.cell_of(player.position + p)
+		if terrain.flow_distance(c) >= 0:
+			return terrain.cell_center(c)
+	return Vector2.INF
+
+
+## 越後面出現的種類越多
+func _pick_enemy_type() -> String:
+	var weights := {"敵": 60.0}
+	if elapsed > 20.0:
+		weights["鼠"] = 20.0
+	if elapsed > 45.0:
+		weights["甲"] = 15.0
+	if elapsed > 75.0:
+		weights["弓"] = 15.0
+	if elapsed > 60.0:
+		weights["鳥"] = 12.0
+	if elapsed > 100.0:
+		weights["冑"] = 10.0
+	if elapsed > 120.0:
+		weights["弩"] = 10.0
+	var total := 0.0
+	for k: String in weights:
+		total += weights[k]
+	var r := randf() * total
+	for k: String in weights:
+		r -= weights[k]
+		if r <= 0.0:
+			return k
+	return "敵"
+
+
+func _hp_mult() -> float:
+	return 1.0 + HP_GROWTH_PER_MINUTE * floorf(elapsed / 60.0)
+
+
+func _spawn_enemy(kind: String, pos: Vector2) -> void:
+	var e := Enemy.new().setup_type(kind, ENEMY_TYPES[kind], _hp_mult())
+	e.position = pos
+	e.z_index = 3 if ENEMY_TYPES[kind].get("boss", false) else 2
+	e.shoot_cd = randf() * ARROW_INTERVAL
+	add_child(e)
+	enemies.append(e)
+
+
+func _move_enemies(delta: float) -> void:
+	for e: Enemy in enemies:
+		e.tick(delta)
+		var to_player := player.position - e.position
+		var vel: Vector2
+		if e.ignores_walls:
+			vel = to_player.normalized() * e.speed
+		else:
+			# 照尋路結果走，會繞過牆
+			vel = terrain.flow_direction(e.position, player.position) * e.speed
+		# 弓：夠近又看得到你，就停下來放箭
+		if e.ranged:
+			e.shoot_cd -= delta
+			if to_player.length() < e.shoot_range and _line_clear(e.position, player.position):
+				vel = Vector2.ZERO
+				if e.shoot_cd <= 0.0:
+					e.shoot_cd = ARROW_INTERVAL
+					_shoot_arrow(e)
+		# 互相推開，避免全部疊在同一點
+		var push := Vector2.ZERO
+		for o: Enemy in _nearby(e.position):
+			if o == e:
+				continue
+			var d := e.position - o.position
+			var dist := d.length()
+			var want := e.radius + o.radius + ENEMY_GAP
+			if dist > 0.0 and dist < want:
+				push += d / dist * (want - dist)
+		var motion := (vel + push * 5.0 + e.knock) * delta
+		e.knock = e.knock.move_toward(Vector2.ZERO, KNOCK_DECAY * delta)
+		if e.ignores_walls:
+			e.position += motion
+		else:
+			e.position = terrain.slide(e.position, motion, e.radius)
+
+
+## 放箭；volley > 1 時一次放一排扇形的箭（大弓）
+func _shoot_arrow(e: Enemy) -> void:
+	var dir := (player.position - e.position).normalized()
+	for k in e.volley:
+		var offset := 0.0 if e.volley == 1 else -VOLLEY_SPREAD / 2.0 + VOLLEY_SPREAD * k / (e.volley - 1)
+		var b := Bullet.new()
+		b.node = Glyph.new().setup("矢", BULLET_SIZE, COLOR_ARROW)
+		b.node.position = e.position
+		b.node.z_index = 4
+		b.vel = dir.rotated(offset) * ARROW_SPEED
+		b.life = ARROW_LIFETIME
+		b.damage = ARROW_DAMAGE
+		add_child(b.node)
+		arrows.append(b)
+
+
+func _move_arrows(delta: float) -> void:
+	for i in range(arrows.size() - 1, -1, -1):
+		var b := arrows[i]
+		b.node.position += b.vel * delta
+		b.life -= delta
+		var done := b.life <= 0.0 or terrain.is_wall(terrain.cell_of(b.node.position))
+		if not done and _player_vulnerable() and b.node.position.distance_to(player.position) < PLAYER_RADIUS + 6.0:
+			_hurt_player(int(b.damage))
+			done = true
+		if done:
+			b.node.queue_free()
+			arrows.remove_at(i)
+
+
+func _damage() -> float:
+	return BASE_DAMAGE * damage_mult
+
+
+## 打敵人：跳傷害數字、擊退，打死就碎開並掉落
+func _damage_enemy(e: Enemy, amount: float, knock := Vector2.ZERO) -> void:
+	var boss := e.is_boss
+	var num := particles.add(str(int(round(amount))),
+			e.position + Vector2(randf_range(-8, 8), -e.radius - 6.0),
+			Vector2(randf_range(-20, 20), -70), 0.45, 33 if boss else 22, Color.WHITE)
+	num.drag = 2.0
+	e.knock += knock * e.knock_resist
+	if e.take_damage(amount):
+		_kill_enemy(e)
+
+
+## 死亡特效：字放大淡出，同時碎成幾個筆畫往外飛
+func _shatter(e: Enemy) -> void:
+	var boss := e.is_boss
+	var pop := particles.add(e.kind, e.position, Vector2.ZERO, 0.15, e.font_size, Color.WHITE)
+	pop.grow = 4.0
+	for i in (10 if boss else 4):
+		var dir := Vector2.from_angle(randf() * TAU)
+		var shard := particles.add(SHARDS.pick_random(), e.position + dir * 6.0,
+				dir * randf_range(120, 240), randf_range(0.25, 0.4), 33 if boss else 22, e.base_color)
+		shard.spin = randf_range(-12, 12)
+		shard.drag = 3.0
+	if boss:
+		_shake(14.0)
+		_hitstop(0.12)
+
+
+func _kill_enemy(e: Enemy) -> void:
+	if not enemies.has(e):
+		return
+	enemies.erase(e)
+	final_bosses.erase(e)   # 決戰的王死了就從清單拿掉
+	var cell: Array = grid.get(_cell(e.position), [])
+	cell.erase(e)
+	_shatter(e)
+	if final_phase:
+		# 決戰中不掉金、不掉寶箱
+		e.queue_free()
+		kills += 1
+		return
+	if e.is_boss:
+		_spawn_chest_near(e.position)
+	for i in e.gold:
+		var spread := Vector2.ZERO if e.gold == 1 else Vector2(randf_range(-20, 20), randf_range(-20, 20))
+		_drop_gold(e.position + spread)
+	e.queue_free()
+	kills += 1
+
+
+# ---------- 攻擊 ----------
+
+func _attack(delta: float) -> void:
+	if _is_blade():
+		_update_combo(delta)
+		_update_zones(delta)
+		_update_blade_shots(delta)
+	attack_cd -= delta
+	if attack_cd > 0.0:
+		return
+	if _is_blade():
+		_slash()
+	else:
+		_fire()
+
+
+func _fire() -> void:
+	var target := _nearest_visible_enemy(AIM_RANGE)
+	if target == null:
+		return
+	attack_cd = FIRE_INTERVAL * attack_mult
+	var dir := (target.position - player.position).normalized()
+	var muzzle := player.position + dir * MUZZLE_DIST
+	# 開槍動畫：主角往後一縮，槍口冒出「砰」
+	player.offset = -dir * RECOIL
+	player.queue_redraw()
+	var flash := Fx.new()
+	var bang := _fx_glyph("砰", muzzle, GLYPH_SIZE)
+	bang.color = COLOR_BULLET
+	flash.nodes.append(bang)
+	_add_fx(flash, 0.12)
+
+	# 彈道強化：Lv n 散射 2n-1 發，角度越來越廣
+	var n := 2 * bullet_lv - 1
+	var spread := deg_to_rad(SPREAD_DEG[bullet_lv - 1])
+	for i in n:
+		var offset := 0.0 if n == 1 else -spread / 2.0 + spread * i / (n - 1)
+		var b := Bullet.new()
+		b.node = Glyph.new().setup("＊", BULLET_SIZE, COLOR_BULLET)
+		b.node.position = muzzle
+		b.vel = dir.rotated(offset) * BULLET_SPEED
+		b.life = BULLET_LIFETIME
+		b.pierce = bullet_pierce
+		b.damage = BULLET_DAMAGE * damage_mult
+		add_child(b.node)
+		bullets.append(b)
+
+
+func _move_bullets(delta: float) -> void:
+	for i in range(bullets.size() - 1, -1, -1):
+		var b := bullets[i]
+		b.node.position += b.vel * delta
+		b.life -= delta
+		var done := terrain.is_wall(terrain.cell_of(b.node.position))  # 撞牆就消失
+		for e: Enemy in _nearby(b.node.position):
+			if b.hits.has(e):
+				continue
+			if e.position.distance_to(b.node.position) < BULLET_RADIUS + e.radius:
+				b.hits.append(e)
+				_damage_enemy(e, b.damage, b.vel.normalized() * KNOCK_BULLET)
+				b.pierce -= 1
+				if b.pierce < 0:
+					done = true
+				break
+		if done or b.life <= 0.0:
+			b.node.queue_free()
+			bullets.remove_at(i)
+
+
+## 朝最近的敵人揮刀。刀法等級決定這一次攻擊是幾連擊、什麼形狀
+##   Lv1 正常斬　Lv2 連斬　Lv3 三連斬　Lv4 雙刀連斬（剪刀合 → 開，共四刀）　Lv5 殘影斬（270°、殘留 0.5 秒）
+func _slash() -> void:
+	var target := _nearest_visible_enemy(slash_range + 14.0)
+	if target == null:
+		return
+	attack_cd = SLASH_INTERVAL * attack_mult
+	var facing := (target.position - player.position).angle()
+	var big := slash_range + COMBO_GROW
+
+	match blade_lv:
+		1:
+			_do_slash(facing, SLASH_ARC, slash_range, false)
+		2:
+			_do_slash(facing, SLASH_ARC, slash_range, false)
+			_queue_hit(COMBO_DELAY, facing, big, true, false)
+		3:
+			# 一刀比一刀大：第二刀大一格、第三刀再大一格
+			_do_slash(facing, SLASH_ARC, slash_range, false)
+			_queue_hit(COMBO_DELAY, facing, big, true, false)
+			_queue_hit(COMBO_DELAY * 2.0, facing, big + COMBO_GROW, false, false)
+		4:
+			# 共四刀，兩刀兩刀一起：1、2 刀像剪刀合起來，3、4 刀反過來打開
+			# 大小直接用三連斬第二、第三刀的大小（+1 格、+2 格）
+			_scissor(facing, big, true)
+			_queue_hit(COMBO_DELAY, facing, big + COMBO_GROW, false, true)
+		_:
+			_do_slash(facing, AFTERIMAGE_ARC, slash_range, false, AFTERIMAGE_TIME)
+
+
+## 排一個之後才出的連擊。scissor 時 flag = 剪刀合起來（true）或打開（false），否則 flag = 順時針
+func _queue_hit(delay: float, facing: float, reach: float, flag: bool, scissor: bool) -> void:
+	combo.append({"t": delay, "facing": facing, "reach": reach, "flag": flag, "scissor": scissor})
+
+
+func _update_combo(delta: float) -> void:
+	for i in range(combo.size() - 1, -1, -1):
+		var h: Dictionary = combo[i]
+		h.t -= delta
+		if h.t > 0.0:
+			continue
+		combo.remove_at(i)
+		if h.scissor:
+			_scissor(h.facing, h.reach, h.flag, false)
+		else:
+			_do_slash(h.facing, SLASH_ARC, h.reach, h.flag, 0.0, false)   # 後續連擊不擊退
+
+
+## 雙刀：左右各一把 150° 的刀，中間重疊 30°。
+## 合（close）：兩把刀從外側往中間掃，交叉後再分開；開：反過來從中間往外掃
+func _scissor(facing: float, reach: float, close: bool, knock := true) -> void:
+	var offset := (SLASH_ARC - SCISSOR_OVERLAP) / 2.0
+	_do_slash(facing - offset, SLASH_ARC, reach, close, 0.0, knock)
+	_do_slash(facing + offset, SLASH_ARC, reach, not close, 0.0, knock)
+
+
+## 一刀：扇形內的敵人都砍到。clockwise 決定特效掃的方向；
+## linger > 0 時斬擊會留在原地，期間每 0.5 秒再打一次（殘影斬）
+## knock：只有每次攻擊的第一下會擊退，後續連擊和殘影都不擊退
+func _do_slash(facing: float, arc: float, reach: float, clockwise: bool, linger := 0.0, knock := true) -> void:
+	_hit_sector(player.position, facing, arc, reach, true, knock)
+
+	# 刀法 Lv3 以上：斬擊範圍內飛來的矢也會被砍掉
+	if blade_lv >= 3:
+		_cut_arrows(player.position, facing, arc, reach)
+
+	# 特效：「斬」字鋪滿扇形，像刀鋒掃過去；範圍越大字越多
+	var fx := SlashFx.new().setup(facing, arc, reach, clockwise)
+	fx.linger = linger
+	fx.position = player.position
+	fx.z_index = 5
+	add_child(fx)
+	if linger > 0.0:
+		_add_zone(player.position, facing, arc, reach, linger, true, true)
+
+
+## 把扇形內的矢砍掉（碎開飛走）
+func _cut_arrows(origin: Vector2, facing: float, arc: float, reach: float) -> void:
+	for i in range(arrows.size() - 1, -1, -1):
+		var b := arrows[i]
+		var to := b.node.position - origin
+		if to.length() > reach + 8.0:
+			continue
+		if arc < TAU and absf(angle_difference(facing, to.angle())) > arc / 2.0:
+			continue
+		var shard := particles.add("矢", b.node.position, to.normalized() * 120.0, 0.25, BULLET_SIZE, COLOR_ARROW)
+		shard.spin = 14.0
+		b.node.queue_free()
+		arrows.remove_at(i)
+
+
+## 打一個扇形（arc >= TAU 就是整圈）內的所有敵人；check_walls 時隔牆打不到
+func _hit_sector(origin: Vector2, facing: float, arc: float, reach: float, check_walls: bool, knock := true) -> void:
+	for e: Enemy in _nearby_radius(origin, reach + 30.0):
+		var to := e.position - origin
+		if to.length() > reach + e.radius:
+			continue
+		if arc < TAU and absf(angle_difference(facing, to.angle())) > arc / 2.0:
+			continue
+		if check_walls and not _line_clear(origin, e.position):
+			continue
+		_damage_enemy(e, _damage(), to.normalized() * KNOCK_SLASH if knock else Vector2.ZERO)
+
+
+# ---------- 殘留斬擊（殘影斬、空間斬擊）----------
+
+func _add_zone(origin: Vector2, facing: float, arc: float, reach: float, life: float, check_walls: bool, cuts_arrows: bool) -> void:
+	var z := Zone.new()
+	z.origin = origin
+	z.facing = facing
+	z.arc = arc
+	z.reach = reach
+	z.life = life
+	z.tick = ZONE_TICK
+	z.check_walls = check_walls
+	z.cuts_arrows = cuts_arrows
+	zones.append(z)
+
+
+func _update_zones(delta: float) -> void:
+	for i in range(zones.size() - 1, -1, -1):
+		var z := zones[i]
+		z.life -= delta
+		z.tick -= delta
+		if z.cuts_arrows:
+			_cut_arrows(z.origin, z.facing, z.arc, z.reach)
+		if z.tick <= 0.0:
+			z.tick += ZONE_TICK
+			_hit_sector(z.origin, z.facing, z.arc, z.reach, z.check_walls, false)   # 殘影不擊退
+		if z.life <= 0.0:
+			zones.remove_at(i)
+
+
+# ---------- 刀＋彈 ----------
+##   Lv1 斬擊波 8 格、穿透 2　Lv2 大斬擊波（2 倍大）　Lv3 四方大斬擊
+##   Lv4 四連大斬擊波（15 格，鎖定最近 4 個敵人）　Lv5 空間斬擊（直接出現在畫面內最近 4 個敵人身上）
+
+func _update_blade_shots(delta: float) -> void:
+	# 已排好的四連斬擊波
+	for i in range(wave_queue.size() - 1, -1, -1):
+		var q: Dictionary = wave_queue[i]
+		q.t -= delta
+		if q.t <= 0.0:
+			wave_queue.remove_at(i)
+			_launch_wave(q.angle, true, WAVE_RANGE_LONG, WAVE_SPEED_FAST)
+
+	if bullet_lv < 1:
+		return
+	wave_cd -= delta
+	if wave_cd > 0.0:
+		return
+	var reach := WAVE_RANGE_LONG if bullet_lv >= 4 else WAVE_RANGE
+	var targets := _on_screen_enemies(RIFT_TARGETS) if bullet_lv >= 5 else _nearest_enemies(reach, 4, true)
+	if targets.is_empty():
+		return
+	wave_cd = WAVE_INTERVAL * attack_mult
+	var first: Enemy = targets[0]
+	var facing := (first.position - player.position).angle()
+	match bullet_lv:
+		1:
+			_launch_wave(facing, false, WAVE_RANGE, WAVE_SPEED)
+		2:
+			_launch_wave(facing, true, WAVE_RANGE, WAVE_SPEED)
+		3:
+			for k in 4:
+				_launch_wave(facing + PI / 2.0 * k, true, WAVE_RANGE, WAVE_SPEED)
+		4:
+			for k in 4:
+				var t: Enemy = targets[k % targets.size()]
+				wave_queue.append({"t": WAVE_BURST_GAP * k, "angle": (t.position - player.position).angle()})
+		_:
+			for t: Enemy in targets:
+				_rift(t.position)
+
+
+func _launch_wave(angle: float, big: bool, reach: float, speed: float) -> void:
+	var w := Wave.new()
+	w.dir = Vector2.from_angle(angle)
+	w.big = big
+	w.reach = reach
+	w.speed = speed
+	w.node = WaveFx.new()
+	w.node.font_size = WaveFx.BIG_SIZE if big else WaveFx.FONT_SIZE
+	w.node.position = player.position + w.dir * 20.0
+	w.node.rotation = angle
+	w.node.z_index = 5
+	add_child(w.node)
+	waves.append(w)
+
+
+func _move_waves(delta: float) -> void:
+	for i in range(waves.size() - 1, -1, -1):
+		var w := waves[i]
+		var step := w.speed * delta
+		w.node.position += w.dir * step
+		w.traveled += step
+		if w.traveled >= w.reach or terrain.is_wall(terrain.cell_of(w.node.position)):
+			w.node.queue_free()
+			waves.remove_at(i)
+			continue
+		var scale := WAVE_BIG_SCALE if w.big else 1.0
+		var half_w := 14.0 * scale
+		var half_d := 12.0 * scale
+		var side := w.dir.orthogonal()
+		for e: Enemy in _nearby_radius(w.node.position, half_w + 30.0):
+			var id := e.get_instance_id()
+			if w.hits.has(id):
+				continue
+			var d := e.position - w.node.position
+			if absf(d.dot(w.dir)) <= half_d + e.radius and absf(d.dot(side)) <= half_w + e.radius:
+				w.hits[id] = true
+				_damage_enemy(e, _damage(), w.dir * KNOCK_SLASH)
+				w.pierce -= 1
+				if w.pierce < 0:
+					break
+		if w.pierce < 0:
+			w.node.queue_free()
+			waves.remove_at(i)
+
+
+## 空間斬擊：在敵人身上直接出現一圈斬擊打一次（無視牆），之後留 0.5 秒殘影但不再造成傷害
+func _rift(pos: Vector2) -> void:
+	var fx := SlashFx.new().setup(randf() * TAU, TAU, RIFT_RADIUS, false)
+	fx.linger = RIFT_TIME
+	fx.color = COLOR_RIFT
+	fx.position = pos
+	fx.z_index = 5
+	add_child(fx)
+	_hit_sector(pos, 0.0, TAU, RIFT_RADIUS, false)   # 只在出現時打一次，殘影只是畫面
+
+
+## 畫面內最近的幾個敵人（空間斬擊不管牆）
+func _on_screen_enemies(count: int) -> Array:
+	var half := get_viewport_rect().size / 2.0
+	var near := enemies.filter(func(e: Enemy) -> bool:
+		var d := e.position - player.position
+		return absf(d.x) < half.x and absf(d.y) < half.y)
+	near.sort_custom(func(a: Enemy, b: Enemy) -> bool:
+		return a.position.distance_squared_to(player.position) < b.position.distance_squared_to(player.position))
+	return near.slice(0, count)
+
+
+## 範圍內最近的幾個敵人；need_sight 時中間不能隔牆
+func _nearest_enemies(max_range: float, count: int, need_sight: bool) -> Array:
+	var near := enemies.filter(func(e: Enemy) -> bool:
+		return e.position.distance_squared_to(player.position) < max_range * max_range)
+	near.sort_custom(func(a: Enemy, b: Enemy) -> bool:
+		return a.position.distance_squared_to(player.position) < b.position.distance_squared_to(player.position))
+	var out := []
+	for e: Enemy in near:
+		if not need_sight or _line_clear(player.position, e.position):
+			out.append(e)
+			if out.size() >= count:
+				break
+	return out
+
+
+## 人＋刀：迴旋刃繞著主角轉，碰到敵人就砍（同一隻有冷卻），也能擋下矢
+##   Lv1 4 把　Lv2 兩圈各 4 把　Lv3 疾旋（一般 1 秒、加速 1 秒）　Lv4 爆旋（外圈擴大爆炸）　Lv5 一整圈刃幕
+func _update_orbit(delta: float) -> void:
+	var want := 0
+	if not _is_blade() and blade_lv >= 1:
+		want = ORBIT_PER_RING if blade_lv == 1 else ORBIT_PER_RING * 2
+	while orbit_blades.size() < want:
+		var g := Glyph.new().setup("刃", ORBIT_SIZE, COLOR_PLAYER)
+		g.z_index = 6
+		add_child(g)
+		orbit_blades.append(g)
+	if orbit_blades.is_empty():
+		return
+
+	# 疾旋：一般 1 秒、加速 1 秒輪流；Lv4 起在加速結束時接著爆旋
+	var fast := false
+	if blade_lv >= 3:
+		var before := orbit_clock
+		orbit_clock = fmod(orbit_clock + delta, SPIN_EVERY + SPIN_TIME)
+		fast = orbit_clock >= SPIN_EVERY
+		if blade_lv >= 4 and orbit_clock < before:   # 剛轉完一輪快轉
+			burst_t = 0.0
+			burst_done = false
+	var radius := ORBIT_RADIUS
+	if burst_t >= 0.0:
+		burst_t += delta
+		var k := burst_t / BURST_TIME
+		radius += BURST_GROW * (1.0 - absf(1.0 - 2.0 * k))   # 往外擴，到一半最大，再收回
+		if k >= 0.5 and not burst_done:
+			burst_done = true
+			_orbit_burst(_outer_radius() + BURST_GROW)
+		if k >= 1.0:
+			burst_t = -1.0
+	orbit_angle += ORBIT_SPEED * (SPIN_MULT if fast else 1.0) * delta
+	var hit_cd := SPIN_HIT_CD if fast else ORBIT_HIT_CD
+
+	for i in orbit_blades.size():
+		var g := orbit_blades[i]
+		# 每 4 把一圈；外圈遠一點、錯開 45 度、反方向轉
+		var ring := i / ORBIT_PER_RING
+		var spin_dir := 1.0 if ring % 2 == 0 else -1.0   # 內外圈轉的方向相反
+		var a := orbit_angle * spin_dir + TAU * (i % ORBIT_PER_RING) / ORBIT_PER_RING + ring * PI / ORBIT_PER_RING
+		g.position = player.position + Vector2.from_angle(a) * (radius + ring * ORBIT_RING_GAP)
+		# 擋矢
+		for j in range(arrows.size() - 1, -1, -1):
+			var b := arrows[j]
+			if b.node.position.distance_to(g.position) < 20.0:
+				var shard := particles.add("矢", b.node.position, -b.vel * 0.4, 0.25, BULLET_SIZE, COLOR_ARROW)
+				shard.spin = 14.0
+				b.node.queue_free()
+				arrows.remove_at(j)
+		for e: Enemy in _nearby(g.position):
+			if e.position.distance_to(g.position) > 14.0 + e.radius:
+				continue
+			var id := e.get_instance_id()
+			if elapsed - orbit_hits.get(id, -99.0) < hit_cd:
+				continue
+			orbit_hits[id] = elapsed
+			_damage_enemy(e, _damage(), (e.position - player.position).normalized() * KNOCK_SLASH)
+
+
+## 最外圈迴旋刃的半徑
+func _outer_radius() -> float:
+	var rings := (orbit_blades.size() - 1) / ORBIT_PER_RING + 1
+	return ORBIT_RADIUS + (rings - 1) * ORBIT_RING_GAP
+
+
+## 爆旋：以主角為中心，半徑內的敵人全部吃一次爆炸傷害，外圈冒出一圈「爆」；Lv5 接著把刃射出去
+func _orbit_burst(r: float) -> void:
+	for e: Enemy in _nearby_radius(player.position, r + 30.0):
+		var to := e.position - player.position
+		if to.length() <= r + e.radius:
+			_damage_enemy(e, _damage() * BURST_MULT, to.normalized() * KNOCK_SLASH)
+	var count := 12
+	for i in count:
+		var dir := Vector2.from_angle(TAU * i / count)
+		var p := particles.add("爆", player.position + dir * r, dir * 60.0, 0.3, BULLET_SIZE, COLOR_BULLET)
+		p.grow = 1.5
+	_shake(10.0)
+	_hitstop(0.04)
+	if blade_lv >= 5:
+		# 往四周射出一整圈刃幕
+		for k in FLY_BARRAGE:   # r 就是爆炸半徑
+			var dir := Vector2.from_angle(TAU * k / FLY_BARRAGE + orbit_angle)
+			_launch_flying_blade(player.position + dir * r * 0.5, dir)
+
+
+## 飛刃：比子彈快兩倍、飛兩倍遠，撞牆反彈，穿透數跟子彈一樣（吃「穿」升級）
+func _launch_flying_blade(pos: Vector2, dir: Vector2) -> void:
+	var b := Bullet.new()
+	b.node = Glyph.new().setup("刃", ORBIT_SIZE, COLOR_PLAYER)
+	b.node.position = pos
+	b.node.z_index = 6
+	b.vel = dir * BULLET_SPEED * FLY_SPEED_MULT
+	b.life = BULLET_LIFETIME * FLY_RANGE_MULT / FLY_SPEED_MULT   # 兩倍快、兩倍遠 → 飛的時間一樣
+	b.pierce = bullet_pierce
+	b.damage = _damage()
+	add_child(b.node)
+	flying_blades.append(b)
+
+
+func _move_flying_blades(delta: float) -> void:
+	for i in range(flying_blades.size() - 1, -1, -1):
+		var b := flying_blades[i]
+		b.life -= delta
+		# 撞牆反彈：分 x、y 兩個方向檢查，哪個方向撞到就把那個方向反過來
+		var p := b.node.position
+		if not terrain.is_wall(terrain.cell_of(p)):   # 從牆裡射出來的話先讓它飛出牆，不反彈
+			if terrain.is_wall(terrain.cell_of(p + Vector2(b.vel.x * delta, 0))):
+				b.vel.x = -b.vel.x
+			if terrain.is_wall(terrain.cell_of(p + Vector2(0, b.vel.y * delta))):
+				b.vel.y = -b.vel.y
+		b.node.position += b.vel * delta
+		var done := b.life <= 0.0
+		for e: Enemy in _nearby(b.node.position):
+			if b.hits.has(e):
+				continue
+			if e.position.distance_to(b.node.position) < BULLET_RADIUS + e.radius:
+				b.hits.append(e)
+				_damage_enemy(e, b.damage, b.vel.normalized() * KNOCK_BULLET)
+				b.pierce -= 1
+				if b.pierce < 0:
+					done = true
+				break
+		if done:
+			b.node.queue_free()
+			flying_blades.remove_at(i)
+
+
+func _fx_glyph(text: String, pos: Vector2, size: int = BULLET_SIZE) -> Glyph:
+	var g := Glyph.new().setup(text, size, COLOR_PLAYER)
+	g.position = pos
+	g.z_index = 5
+	add_child(g)
+	return g
+
+
+func _add_fx(fx: Fx, duration: float) -> void:
+	fx.life = duration
+	fx.duration = duration
+	effects.append(fx)
+
+
+func _update_effects(delta: float) -> void:
+	for i in range(effects.size() - 1, -1, -1):
+		var fx := effects[i]
+		fx.life -= delta
+		for g in fx.nodes:
+			g.modulate.a = clampf(fx.life / fx.duration, 0.0, 1.0)
+		if fx.life <= 0.0:
+			for g in fx.nodes:
+				g.queue_free()
+			effects.remove_at(i)
+
+
+## 找最近、在範圍內、而且中間沒有牆擋住的敵人
+func _nearest_visible_enemy(max_range: float) -> Enemy:
+	var sorted := enemies.filter(func(e: Enemy) -> bool:
+		return e.position.distance_squared_to(player.position) < max_range * max_range)
+	sorted.sort_custom(func(a: Enemy, b: Enemy) -> bool:
+		return a.position.distance_squared_to(player.position) < b.position.distance_squared_to(player.position))
+	for e: Enemy in sorted:
+		if _line_clear(player.position, e.position):
+			return e
+	return null
+
+
+func _line_clear(from: Vector2, to: Vector2) -> bool:
+	var steps := int(from.distance_to(to) / (Terrain.CELL * 0.5)) + 1
+	for i in range(1, steps):
+		if terrain.is_wall(terrain.cell_of(from.lerp(to, float(i) / steps))):
+			return false
+	return true
+
+
+# ---------- 金 ----------
+
+func _drop_gold(pos: Vector2) -> void:
+	var g := Glyph.new().setup("金", GOLD_SIZE, COLOR_GOLD)
+	g.position = pos
+	g.z_index = 1
+	add_child(g)
+	golds.append(g)
+
+
+## 進入吸金範圍的「金」會被吸過來，碰到主角就計數並累積經驗
+func _update_gold(delta: float) -> void:
+	for i in range(golds.size() - 1, -1, -1):
+		var g := golds[i]
+		var dist := g.position.distance_to(player.position)
+		if dist > pickup_range:
+			continue
+		if dist < PLAYER_RADIUS:
+			gold += 1
+			_gain_xp(1)
+			g.queue_free()
+			golds.remove_at(i)
+			continue
+		g.position = g.position.move_toward(player.position, GOLD_PULL_SPEED * delta)
+
+
+# ---------- 天罰 ----------
+## 一局只能用一次：滑鼠左鍵點任何地方，全地圖的小兵瞬間清空（王、大弓吃重傷害），空中的矢也一起清掉
+
+func _update_smite(_delta: float) -> void:
+	smite_ring.visible = false   # 全圖攻擊不需要瞄準
+	if Input.is_action_just_pressed("smite") and not smite_used:
+		smite_used = true
+		_smite_all()
+
+
+func _smite_all() -> void:
+	for e: Enemy in enemies.duplicate():
+		if e.is_boss:
+			_damage_enemy(e, _damage() * BOSS_LAND_MULT)
+		else:
+			_kill_enemy(e)
+	for b in arrows:
+		b.node.queue_free()
+	arrows.clear()
+	# 特效：主角頭上一個大「天」，周圍一圈「罰」，整個畫面閃一下淡藍色
+	var big := particles.add("天", player.position + Vector2(0, -40), Vector2(0, -30), 1.0, 132, COLOR_SMITE)
+	big.grow = 0.3
+	var count := 12
+	for i in count:
+		var dir := Vector2.from_angle(TAU * i / count)
+		var p := particles.add("罰", player.position + dir * SMITE_RADIUS, dir * 400.0, 0.8, GLYPH_SIZE, COLOR_SMITE)
+		p.drag = 1.5
+	hurt_overlay.color = Color(COLOR_SMITE, 0.5)
+	_shake(16.0)
+	_hitstop(0.15)
+
+
+# ---------- 打擊感 ----------
+
+func _shake(amount: float) -> void:
+	shake = maxf(shake, amount)
+
+
+func _hitstop(t: float) -> void:
+	hitstop = maxf(hitstop, t)
+
+
+func _update_feedback(delta: float) -> void:
+	if shake > 0.0:
+		shake = move_toward(shake, 0.0, SHAKE_DECAY * delta)
+		cam.offset = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * shake
+	elif cam.offset != Vector2.ZERO:
+		cam.offset = Vector2.ZERO
+	if hurt_overlay.color.a > 0.0:
+		hurt_overlay.color.a = move_toward(hurt_overlay.color.a, 0.0, 1.2 * delta)
+
+
+# ---------- 寶箱 ----------
+
+func _update_chests() -> void:
+	if not final_phase and elapsed >= next_chest_time:
+		next_chest_time += CHEST_INTERVAL
+		_spawn_chest()
+
+	for i in range(chests.size() - 1, -1, -1):
+		var c := chests[i]
+		if c.node.position.distance_to(player.position) < CHEST_OPEN_RANGE:
+			_open_chest(c)
+			chests.remove_at(i)
+	_update_chest_pointer()
+	_update_boss_pointers()
+
+
+## 找一個附近、不是牆、走得到的位置放寶箱
+func _spawn_chest() -> void:
+	for i in 30:
+		var dist := randf_range(CHEST_MIN_DIST, CHEST_MAX_DIST)
+		var cell := terrain.cell_of(player.position + Vector2.from_angle(randf() * TAU) * dist)
+		if terrain.flow_distance(cell) >= 0:
+			_place_chest(terrain.cell_center(cell))
+			return
+
+
+## 王死掉的地方掉寶箱；王會穿牆，死在牆裡就往外找最近的空地
+func _spawn_chest_near(pos: Vector2) -> void:
+	var center := terrain.cell_of(pos)
+	for r in 8:
+		for dx in range(-r, r + 1):
+			for dy in range(-r, r + 1):
+				if maxi(absi(dx), absi(dy)) != r:
+					continue
+				var c := center + Vector2i(dx, dy)
+				if not terrain.is_wall(c):
+					_place_chest(terrain.cell_center(c))
+					return
+
+
+func _place_chest(pos: Vector2) -> void:
+	var c := Chest.new()
+	c.node = Glyph.new().setup("寶", GLYPH_SIZE, COLOR_CHEST)
+	c.node.position = pos
+	c.node.z_index = 1
+	add_child(c.node)
+	chests.append(c)
+
+
+## 打開寶箱：排一次「彈 / 刀」二選一
+func _open_chest(c: Chest) -> void:
+	pending_power += 1
+	var pop := particles.add("寶", c.node.position, Vector2.ZERO, 0.3, GLYPH_SIZE, COLOR_CHEST)
+	pop.grow = 3.0
+	c.node.queue_free()
+
+
+# ---------- 寶箱強化（彈 / 刀）----------
+
+func _open_power_up() -> void:
+	pending_power -= 1
+	var opts := []
+	if bullet_lv < LINE_MAX:
+		opts.append("彈")
+	if blade_lv < LINE_MAX:
+		opts.append("刀")
+	if opts.is_empty():
+		# 兩條線都滿了：改成在身邊灑 20 個金（不補血）
+		for i in 20:
+			_drop_gold(player.position + Vector2.from_angle(randf() * TAU) * randf_range(20.0, 60.0))
+		return
+	opts.append("癒")   # 不升級，改成回滿血
+	power_choices = opts
+	power_cursor = 0
+	state = State.POWER_UP
+	player.modulate.a = 1.0
+	_show_power_up()
+
+
+func _line_level(line: String) -> int:
+	return bullet_lv if line == "彈" else blade_lv
+
+
+func _show_power_up() -> void:
+	var who: String = CHARACTERS[character].glyph
+	var cards := []
+	for line: String in power_choices:
+		if line == "癒":
+			cards.append({"icon": "癒", "name": "回滿血", "sub": "%d/%d" % [hp, max_hp], "desc": "不強化武器，血量直接回到上限"})
+			continue
+		var info: Dictionary = POWER_INFO[who][line]
+		var lv := _line_level(line)
+		cards.append({"icon": line, "name": info.name, "sub": "Lv %d→%d" % [lv, lv + 1], "desc": info.desc[lv + 1]})
+	level_cards.show_cards("寶箱！選一個強化", cards, power_cursor, "A D / ←→ 選擇　Space / Enter 確定")
+
+
+func _process_power_up() -> void:
+	var step := 0
+	if Input.is_action_just_pressed("move_left"):
+		step = -1
+	elif Input.is_action_just_pressed("move_right"):
+		step = 1
+	if step != 0:
+		power_cursor = posmod(power_cursor + step, power_choices.size())
+		_show_power_up()
+	if Input.is_action_just_pressed("confirm"):
+		if power_choices[power_cursor] == "彈":
+			bullet_lv += 1
+		elif power_choices[power_cursor] == "癒":
+			hp = max_hp
+		else:
+			blade_lv += 1
+		level_cards.visible = false
+		state = State.PLAYING
+		_update_hud()
+
+
+## 最近的寶箱在畫面外時，在畫面邊緣朝那個方向顯示一個「寶」
+func _update_chest_pointer() -> void:
+	var best: Chest = null
+	var best_d := INF
+	for c in chests:
+		var d := c.node.position.distance_squared_to(player.position)
+		if d < best_d:
+			best_d = d
+			best = c
+	if best == null:
+		chest_pointer.visible = false
+		return
+	var edge := _edge_point(best.node.position)
+	chest_pointer.visible = edge != Vector2.INF
+	if chest_pointer.visible:
+		chest_pointer.position = edge
+
+
+## 王在畫面外時，在畫面邊緣朝牠的方向顯示牠的字（每隻王一個）
+func _update_boss_pointers() -> void:
+	var used := 0
+	for e in enemies:
+		if not e.is_boss:
+			continue
+		var edge := _edge_point(e.position)
+		if edge == Vector2.INF:
+			continue
+		if used >= boss_pointers.size():
+			var g := Glyph.new().setup(e.kind, BULLET_SIZE, e.base_color)
+			g.modulate.a = 0.8
+			g.z_index = 20
+			add_child(g)
+			boss_pointers.append(g)
+		var ptr := boss_pointers[used]
+		if ptr.text != e.kind:
+			ptr.set_text(e.kind)
+		ptr.color = e.base_color
+		ptr.position = edge
+		ptr.visible = true
+		ptr.queue_redraw()
+		used += 1
+	for i in range(used, boss_pointers.size()):
+		boss_pointers[i].visible = false
+
+
+## target 在畫面外的話，回傳主角往 target 方向碰到畫面邊緣（往內縮一點）的位置；在畫面內回傳 INF
+func _edge_point(target: Vector2) -> Vector2:
+	var to := target - player.position
+	var half := get_viewport_rect().size / 2.0 - Vector2(40, 40)
+	if absf(to.x) < half.x and absf(to.y) < half.y:
+		return Vector2.INF
+	var t := minf(half.x / maxf(absf(to.x), 0.001), half.y / maxf(absf(to.y), 0.001))
+	return player.position + to * t
+
+
+## 主角頭上的小血條
+func _draw_player_bar() -> void:
+	const W := 48.0
+	var y := -GLYPH_SIZE / 2.0 - 14.0
+	var ratio := clampf(float(hp) / max_hp, 0.0, 1.0)
+	player_bar.draw_rect(Rect2(-W / 2.0, y, W, 5), Color(0.25, 0.25, 0.25))
+	player_bar.draw_rect(Rect2(-W / 2.0, y, W * ratio, 5), Color(0.9, 0.25, 0.25))
+
+
+# ---------- 升級 ----------
+
+func _xp_needed() -> int:
+	return XP_FIRST_LEVEL + (level - 1) * XP_STEP
+
+
+func _gain_xp(amount: int) -> void:
+	xp += amount
+	while xp >= _xp_needed():
+		xp -= _xp_needed()
+		level += 1
+		pending_levels += 1
+
+
+## 這個角色還能升的選項
+func _available_upgrades() -> Array:
+	var who: String = CHARACTERS[character].glyph
+	return UPGRADES.filter(func(u: Dictionary) -> bool:
+		return (u.who == "all" or u.who == who) and upgrade_levels.get(u.id, 0) < UPGRADE_MAX_LEVEL)
+
+
+func _open_level_up() -> void:
+	pending_levels -= 1
+	var pool := _available_upgrades()
+	if pool.is_empty():
+		# 全部升滿了：沒有東西可選，直接跳過（不補血）
+		return
+	pool.shuffle()
+	upgrade_choices = pool.slice(0, 3)
+	upgrade_cursor = 0
+	state = State.LEVEL_UP
+	player.modulate.a = 1.0
+	_show_level_up()
+
+
+func _show_level_up() -> void:
+	var cards := []
+	for u: Dictionary in upgrade_choices:
+		var lv: int = upgrade_levels.get(u.id, 0)
+		cards.append({"icon": u.icon, "name": u.name, "sub": "Lv %d→%d" % [lv, lv + 1], "desc": u.desc})
+	level_cards.show_cards("升級！　級 %d" % level, cards, upgrade_cursor, "A D / ←→ 選擇　Space / Enter 確定")
+
+
+func _process_level_up() -> void:
+	var step := 0
+	if Input.is_action_just_pressed("move_left"):
+		step = -1
+	elif Input.is_action_just_pressed("move_right"):
+		step = 1
+	if step != 0:
+		upgrade_cursor = posmod(upgrade_cursor + step, upgrade_choices.size())
+		_show_level_up()
+	if Input.is_action_just_pressed("confirm"):
+		_apply_upgrade(upgrade_choices[upgrade_cursor].id)
+		level_cards.visible = false
+		state = State.PLAYING
+		_update_hud()
+		# 還有沒升完的級，就接著再選一次
+		if pending_levels > 0:
+			_open_level_up()
+
+
+func _apply_upgrade(id: String) -> void:
+	upgrade_levels[id] = upgrade_levels.get(id, 0) + 1
+	match id:
+		"haste":
+			# 攻擊速度每級 +15%（不是乘上去，避免疊太快）
+			attack_mult = 1.0 / (1.0 + 0.15 * upgrade_levels[id])
+		"pierce":
+			bullet_pierce += 1
+		"reach":
+			slash_range *= 1.2
+		"speed":
+			player_speed *= 1.12
+		"vital":
+			max_hp += 20
+			hp = mini(hp + 10, max_hp)
+		"power":
+			damage_mult += 0.2
+		"magnet":
+			pickup_range *= 1.35
+		"focus":
+			skill_cooldown *= 0.85
+			skill_recharge = minf(skill_recharge, skill_cooldown)
+
+
+# ---------- 空間格子（加速碰撞查詢）----------
+
+func _cell(p: Vector2) -> Vector2i:
+	return Vector2i(floori(p.x / GRID_CELL), floori(p.y / GRID_CELL))
+
+
+func _build_grid() -> void:
+	grid.clear()
+	for e: Enemy in enemies:
+		var k := _cell(e.position)
+		if not grid.has(k):
+			grid[k] = []
+		grid[k].append(e)
+
+
+## 半徑 r 內可能碰到的敵人（給大範圍的判定用）
+func _nearby_radius(p: Vector2, r: float) -> Array:
+	var out := []
+	var a := _cell(p - Vector2(r, r))
+	var b := _cell(p + Vector2(r, r))
+	for x in range(a.x, b.x + 1):
+		for y in range(a.y, b.y + 1):
+			var k := Vector2i(x, y)
+			if grid.has(k):
+				out.append_array(grid[k])
+	return out
+
+
+func _nearby(p: Vector2) -> Array:
+	var out := []
+	var c := _cell(p)
+	for dx in range(-1, 2):
+		for dy in range(-1, 2):
+			var k := c + Vector2i(dx, dy)
+			if grid.has(k):
+				out.append_array(grid[k])
+	return out
+
+
+# ---------- HUD 與結束 ----------
+
+## 蓋在最上層的全畫面濾鏡：把整個畫面（含 HUD）的亮度、彩度調低一點，看久了比較不刺眼
+func _build_screen_filter() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 100
+	add_child(layer)
+	var rect := ColorRect.new()
+	rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var shader := Shader.new()
+	shader.code = """
+shader_type canvas_item;
+uniform sampler2D screen_tex : hint_screen_texture, filter_nearest;
+uniform float brightness = 1.0;
+uniform float saturation = 1.0;
+void fragment() {
+	vec3 c = texture(screen_tex, SCREEN_UV).rgb;
+	float l = dot(c, vec3(0.299, 0.587, 0.114));
+	COLOR = vec4(mix(vec3(l), c, saturation) * brightness, 1.0);
+}
+"""
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	mat.set_shader_parameter("brightness", SCREEN_BRIGHTNESS)
+	mat.set_shader_parameter("saturation", SCREEN_SATURATION)
+	rect.material = mat
+	layer.add_child(rect)
+
+
+func _build_hud() -> void:
+	var layer := CanvasLayer.new()
+	add_child(layer)
+	var root := Control.new()
+	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var theme := Theme.new()
+	theme.default_font = font
+	theme.default_font_size = 33
+	# HUD 文字加黑色外框，蓋在牆上也看得清楚，又不會擋住後面的畫面
+	theme.set_constant("outline_size", "Label", 12)
+	theme.set_color("font_outline_color", "Label", Color.BLACK)
+	root.theme = theme
+	layer.add_child(root)
+
+	hurt_overlay = ColorRect.new()
+	hurt_overlay.color = Color(1, 0, 0, 0)
+	hurt_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hurt_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(hurt_overlay)
+
+	hud_hp = Label.new()
+	hud_hp.position = Vector2(24, 16)
+	root.add_child(hud_hp)
+
+	hud_skill = Label.new()
+	hud_skill.position = Vector2(24, 70)
+	root.add_child(hud_skill)
+
+	hud_key_skill = Label.new()
+	hud_key_skill.add_theme_font_size_override("font_size", 22)
+	hud_key_skill.text = "Shift"
+	hud_key_skill.position = Vector2(24, 112)
+	root.add_child(hud_key_skill)
+	hud_key_smite = Label.new()
+	hud_key_smite.add_theme_font_size_override("font_size", 22)
+	hud_key_smite.text = "滑鼠左鍵"
+	hud_key_smite.position = Vector2(24, 112)
+	root.add_child(hud_key_smite)
+
+	hud_power = Label.new()
+	hud_power.position = Vector2(24, 152)
+	root.add_child(hud_power)
+
+	hud_time = Label.new()
+	hud_time.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	hud_time.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hud_time.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	hud_time.position.y = 16
+	root.add_child(hud_time)
+
+	hud_kills = Label.new()
+	hud_kills.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	hud_kills.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	hud_kills.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	hud_kills.position += Vector2(-24, 16)
+	root.add_child(hud_kills)
+
+	# 選角 / 升級 / 結束畫面：半透明黑底，文字靠左排好後整塊置中
+	menu = Control.new()
+	menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	menu.visible = false
+	root.add_child(menu)
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.8)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	menu.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	menu.add_child(center)
+	menu_label = Label.new()
+	menu_label.add_theme_font_size_override("font_size", 33)
+	menu_label.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+	center.add_child(menu_label)
+
+	level_cards = UpgradeCards.new()
+	level_cards.font = font
+	level_cards.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	level_cards.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	level_cards.visible = false
+	root.add_child(level_cards)
+
+
+func _show_menu(text: String) -> void:
+	menu_label.text = text
+	menu.visible = true
+
+
+func _update_hud() -> void:
+	var blocks := clampi(int(ceil(10.0 * hp / max_hp)), 0, 10)
+	hud_hp.text = "血 %s%s %d/%d" % ["■".repeat(blocks), "□".repeat(10 - blocks), hp, max_hp]
+	var charges := "●".repeat(skill_charges) + "○".repeat(SKILL_MAX_CHARGES - skill_charges)
+	var wait := "" if skill_charges == SKILL_MAX_CHARGES else " %.1f" % skill_recharge
+	var smite := "○" if smite_used else "●"
+	hud_skill.text = "技 %s%s　天 %s" % [charges, wait, smite]
+	# 「滑鼠左鍵」對齊在「天」底下（技後面的字數會變，所以每次算位置）
+	var before := "技 %s%s　" % [charges, wait]
+	hud_key_smite.position.x = 24 + Glyph.font.get_string_size(before, HORIZONTAL_ALIGNMENT_LEFT, -1, 33).x
+	if player_bar != null:
+		player_bar.queue_redraw()
+	hud_power.text = "彈 Lv%d　刀 Lv%d" % [bullet_lv, blade_lv]
+	if final_phase:
+		var counts := {}
+		for b in final_bosses:
+			counts[b.kind] = counts.get(b.kind, 0) + 1
+		var parts := []
+		for k: String in counts:
+			parts.append("%s ×%d" % [k, counts[k]])
+		hud_time.text = "決戰　" + "　".join(parts)
+	else:
+		hud_time.text = _fmt_time(GAME_DURATION - elapsed)
+	hud_kills.text = "級 %d　金 %d/%d　擊倒 %d\n敵血 ×%.1f" % [level, xp, _xp_needed(), kills, _hp_mult()]
+
+
+func _end(result: State) -> void:
+	state = result
+	_update_hud()
+	player.modulate.a = 1.0
+	var title := "你擊敗了最終王！"
+	if result == State.DEAD:
+		title = "你倒下了"
+		player.set_text("亡")
+	var stats := "存活 %s　級 %d　擊倒 %d　金 %d" % [_fmt_time(elapsed), level, kills, gold]
+	level_cards.show_cards(title, _final_level_cards(), -1, "按 Space / Enter 再來一局", stats)
+
+
+## 結算畫面的卡片：兩條強化線，加上每一個升過的金升級
+func _final_level_cards() -> Array:
+	var who: String = CHARACTERS[character].glyph
+	var cards := []
+	for line: String in ["彈", "刀"]:
+		var info: Dictionary = POWER_INFO[who][line]
+		var lv := _line_level(line)
+		var desc: String = info.desc[lv] if lv < info.desc.size() else ""
+		if lv == 0:
+			desc = "沒有拿到"
+		elif desc == "":
+			desc = "基本攻擊"
+		cards.append({"icon": line, "name": info.name, "sub": "Lv %d" % lv, "desc": desc})
+	for u: Dictionary in UPGRADES:
+		var lv: int = upgrade_levels.get(u.id, 0)
+		if lv > 0:
+			cards.append({"icon": u.icon, "name": u.name, "sub": "Lv %d" % lv, "desc": "%s（×%d）" % [u.desc, lv]})
+	return cards
+
+
+func _fmt_time(t: float) -> String:
+	var s := int(ceil(t))
+	return "%02d:%02d" % [s / 60, s % 60]

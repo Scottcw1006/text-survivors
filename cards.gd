@@ -6,8 +6,9 @@ extends Control
 const CELL := 20.0                 # 框字的間距
 const BORDER_CHAR := "框"
 const BORDER_SIZE := 17
-const COLS := 13                   # 卡片寬幾個框字
-const ROWS := 21                   # 卡片高幾個框字
+const COLS := 15                   # 卡片寬幾個框字
+const ROWS := 23                   # 卡片高幾個框字
+const PAD := 20.0                  # 內容往下移多少（卡片比原本大一圈，內容跟著置中）
 const GAP := 40.0                  # 卡片之間的距離
 const LIFT := 12.0                 # 選中的卡片往上浮多少
 const DESC_SIZE := 22
@@ -79,16 +80,16 @@ func _draw() -> void:
 		var c: Dictionary = cards[i]
 		_frame(origin, COLS, ROWS, color)
 
-		_text(c.icon, Vector2(mid, origin.y + 92.0), 66, color)
-		_text(c.name, Vector2(mid, origin.y + 172.0), 33, color)
-		var desc_top := 206.0
+		_text(c.icon, Vector2(mid, origin.y + PAD + 92.0), 66, color)
+		_text(c.name, Vector2(mid, origin.y + PAD + 172.0), 33, color)
+		var desc_top := PAD + 206.0
 		if c.sub != "":
-			_text(c.sub, Vector2(mid, origin.y + 212.0), 22, color)
-			desc_top = 246.0
+			_text(c.sub, Vector2(mid, origin.y + PAD + 212.0), 22, color)
+			desc_top = PAD + 246.0
 		# 說明文字在框內自動換行，行數依剩下的高度決定
-		var inner_w := (COLS - 2) * CELL - 8.0
-		var max_lines := int((card_h - CELL - 8.0 - desc_top) / DESC_LINE)
-		var desc_pos := Vector2(origin.x + CELL + 4.0, origin.y + desc_top + font.get_ascent(DESC_SIZE))
+		var inner_w := (COLS - 4) * CELL - 8.0
+		var max_lines := int((card_h - CELL * 2.0 - 8.0 - desc_top) / DESC_LINE)
+		var desc_pos := Vector2(origin.x + CELL * 2.0 + 4.0, origin.y + desc_top + font.get_ascent(DESC_SIZE))
 		draw_multiline_string(font, desc_pos, c.desc, HORIZONTAL_ALIGNMENT_CENTER, inner_w, DESC_SIZE, max_lines, color)
 
 	# 教學卡：一排在角色卡下面

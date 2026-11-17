@@ -34,7 +34,7 @@ const DASH_DISTANCE := 216.0        # 人：衝刺六格
 const DASH_TIME := 0.12             # 很快，像瞬移
 const JUMP_DISTANCE := 180.0        # 刀：跳五格
 const JUMP_TIME := 0.35
-const JUMP_LAND_RANGE := 72.0       # 落地時兩格內的敵人瞬殺
+const JUMP_LAND_RANGE := 108.0      # 落地時三格內的敵人瞬殺
 const LAND_GRACE := 0.2             # 落地後再多無敵一下
 const DASH_EXTRA_GRACE := 1.0       # 人衝刺結束後再多無敵 1 秒
 
@@ -651,7 +651,7 @@ func _step_skill(delta: float) -> void:
 			land_grace = LAND_GRACE + DASH_EXTRA_GRACE
 
 
-## 刀落地：兩格內的敵人瞬殺（王只吃重傷害）
+## 刀落地：三格內的敵人瞬殺（王只吃重傷害）
 func _land() -> void:
 	land_grace = LAND_GRACE
 	for e: Enemy in enemies.duplicate():
@@ -662,7 +662,7 @@ func _land() -> void:
 		else:
 			_kill_enemy(e)
 	var fx := Fx.new()
-	var count := 8
+	var count := 12   # 範圍變大，「震」也多幾個才不會太稀
 	for i in count:
 		var a := TAU * i / count
 		fx.nodes.append(_fx_glyph("震", player.position + Vector2.from_angle(a) * JUMP_LAND_RANGE * 0.8))

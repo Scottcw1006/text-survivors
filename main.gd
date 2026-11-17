@@ -53,6 +53,7 @@ const FINAL_SIZE_MULT := 1.3        # 最終王的字放大幾倍（會取最近
 const FINAL_HP_MULT := 2.0          # 最終王的血量倍率
 const FINAL_SPEED_MULT := 1.5       # 最終王的移動速度倍率
 const FINAL_FIRE_RATE_MULT := 1.5   # 最終王（大弓）放箭的頻率倍率
+const FINAL_ARROW_SPEED_MULT := 1.5 # 最終王（大弓）矢的飛行速度倍率
 const ARCHER_RANGE := 300.0         # 弓在這個距離內、看得到你就停下來放箭
 const ARROW_INTERVAL := 2.0
 const ARROW_SPEED := 220.0
@@ -695,6 +696,7 @@ func _start_final_phase() -> void:
 		boss.speed *= FINAL_SPEED_MULT
 		boss.knock_resist = 0.0   # 完全不吃擊退
 		boss.shoot_interval /= FINAL_FIRE_RATE_MULT
+		boss.arrow_speed *= FINAL_ARROW_SPEED_MULT
 		boss.shoot_cd = minf(boss.shoot_cd, boss.shoot_interval)
 		boss.queue_redraw()
 		final_bosses.append(boss)
@@ -784,6 +786,7 @@ func _spawn_enemy(kind: String, pos: Vector2) -> void:
 	e.position = pos
 	e.z_index = 3 if ENEMY_TYPES[kind].get("boss", false) else 2
 	e.shoot_interval = ARROW_INTERVAL
+	e.arrow_speed = ARROW_SPEED
 	e.shoot_cd = randf() * ARROW_INTERVAL
 	add_child(e)
 	enemies.append(e)
@@ -834,7 +837,7 @@ func _shoot_arrow(e: Enemy) -> void:
 		b.node = Glyph.new().setup("矢", BULLET_SIZE, COLOR_ARROW)
 		b.node.position = e.position
 		b.node.z_index = 4
-		b.vel = dir.rotated(offset) * ARROW_SPEED
+		b.vel = dir.rotated(offset) * e.arrow_speed
 		b.life = ARROW_LIFETIME
 		b.damage = ARROW_DAMAGE
 		add_child(b.node)

@@ -2063,7 +2063,11 @@ func _end(result: State) -> void:
 		title = "你倒下了"
 		player.set_text("亡")
 	var stats := "存活 %s　級 %d　擊倒 %d　金 %d" % [_fmt_time(elapsed), level, kills, gold]
-	level_cards.show_cards(title, _final_level_cards(), -1, "" if is_touch else "或按 Space / Enter", stats, [], "再來一局")
+	# 手機：要點「再來一局」按鈕才重開（避免手指誤觸直接跳過）；電腦維持原本按 Space / Enter
+	if is_touch:
+		level_cards.show_cards(title, _final_level_cards(), -1, "", stats, [], "再來一局")
+	else:
+		level_cards.show_cards(title, _final_level_cards(), -1, "按 Space / Enter 再來一局", stats)
 
 
 ## 結算畫面的卡片：兩條強化線，加上每一個升過的金升級

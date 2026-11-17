@@ -323,6 +323,7 @@ var next_boss_time := BOSS_INTERVAL
 var next_chest_time := CHEST_INTERVAL
 var final_phase := false           # 三分鐘後的決戰：不再掉金、不再出寶箱
 var final_bosses: Array[Enemy] = []
+var final_roster: Array[String] = []  # 決戰一開始有哪些王（照順序），血條用；死掉的從 final_bosses 拿掉
 var smite_used := false            # 天罰一局只能用一次
 
 var font: FontFile
@@ -351,6 +352,7 @@ var hud_key_skill: Label            # 「技」下面的操作鍵說明
 var hud_key_smite: Label            # 「天」下面的操作鍵說明
 var hud_power: Label
 var hud_time: Label
+var hud_boss: Label                 # 決戰時上方的最終王血條
 var hud_kills: Label
 var menu: Control                  # 選角 / 升級 / 結束畫面共用
 var menu_label: Label
@@ -600,6 +602,10 @@ func _apply_screen_scale() -> void:
 	# 手機畫面比較窄，時間／決戰那行放到第二排，才不會跟左邊的血條疊在一起
 	if hud_time != null:
 		hud_time.position.y = 70 if is_touch else 16
+	if hud_boss != null:
+		# 手機畫面比較窄：血條用小一號的字，放在決戰那行下面
+		hud_boss.position.y = 116 if is_touch else 62
+		hud_boss.add_theme_font_size_override("font_size", 22 if is_touch else 33)
 	if terrain != null:
 		terrain.queue_redraw()
 
@@ -806,6 +812,7 @@ func _start_final_phase() -> void:
 		boss.shoot_cd = minf(boss.shoot_cd, boss.shoot_interval)
 		boss.queue_redraw()
 		final_bosses.append(boss)
+		final_roster.append(boss.kind)
 	var banner := particles.add("決戰", player.position + Vector2(0, -120), Vector2(0, -20), 2.0, 66, COLOR_ENEMY_BOSS)
 	banner.grow = 0.2
 	_shake(12.0)
@@ -1769,6 +1776,26 @@ func _edge_point(target: Vector2) -> Vector2:
 	return player.position + to * t
 
 
+## 決戰時上方顯示每一隻最終王的血條（打倒的顯示「擊倒」），讓玩家知道要把它們全部打倒
+func _update_boss_bars() -> void:
+	var alive := final_bosses.duplicate()
+	var parts := []
+	for kind in final_roster:
+		var boss: Enemy = null
+		for b in alive:
+			if b.kind == kind:
+				boss = b
+				break
+		if boss == null:
+			parts.append("%s 擊倒" % kind)
+			continue
+		alive.erase(boss)
+		var blocks := clampi(int(ceil(10.0 * boss.hp / boss.max_hp)), 0, 10)
+		parts.append("%s %s%s" % [kind, "■".repeat(blocks), "□".repeat(10 - blocks)])
+	hud_boss.text = "　　".join(parts)
+	hud_boss.visible = true
+
+
 ## 決戰的紅框：畫面四邊一圈紅色「戰」字，慢慢一明一暗地閃
 const FINAL_FRAME_CHAR := "戰"
 const FINAL_FRAME_SIZE := 33        # 電腦模式；手機模式畫面已經放大一倍，用 22
@@ -2018,6 +2045,15 @@ func _build_hud() -> void:
 	hud_time.position.y = 16
 	root.add_child(hud_time)
 
+	hud_boss = Label.new()
+	hud_boss.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	hud_boss.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hud_boss.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	hud_boss.add_theme_color_override("font_color", COLOR_ENEMY_BOSS)
+	hud_boss.position.y = 62
+	hud_boss.visible = false
+	root.add_child(hud_boss)
+
 	hud_kills = Label.new()
 	hud_kills.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	hud_kills.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -2112,6 +2148,7 @@ func _update_hud() -> void:
 			parts.append("%s ×%d" % [k, counts[k]])
 		hud_time.text = "決戰　" + "　".join(parts)
 		hud_time.add_theme_color_override("font_color", COLOR_ENEMY_BOSS)
+		_update_boss_bars()
 		final_frame.visible = true
 		final_frame.queue_redraw()
 	else:

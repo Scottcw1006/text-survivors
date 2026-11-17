@@ -2,6 +2,7 @@ class_name UpgradeCards
 extends Control
 ## 卡片畫面（選角、升級、寶箱、結算共用）：幾張用「框」字圍起來的卡片。
 ## 選中的卡片框是亮的、往上浮一點；沒選中的變暗。cursor = -1 時全部都亮（結算用，不能選）。
+## 畫面放不下時（手機模式畫面比較小）整個畫面會等比例縮小到放得下。
 
 const CELL := 20.0                 # 框字的間距
 const BORDER_CHAR := "框"
@@ -31,10 +32,13 @@ var cursor := 0
 var tips: Array = []               # [{name, key, desc}]，選角時才有
 var card_rects: Array[Rect2] = []  # 每張卡片畫在哪（手機點卡片用）
 var subtitle_rect := Rect2()       # 標題下那行小字的範圍（選角時點它切換操作模式）
+var button := ""                   # 卡片下面的按鈕文字（結算的「再來一局」），空字串 = 沒有按鈕
+var button_rect := Rect2()
 
 
-func show_cards(t: String, c: Array, selected: int, h: String, sub_title := "", tip_cards := []) -> void:
+func show_cards(t: String, c: Array, selected: int, h: String, sub_title := "", tip_cards := [], button_text := "") -> void:
 	title = t
+	button = button_text
 	tips = tip_cards
 	subtitle = sub_title
 	cards = c
@@ -44,30 +48,60 @@ func show_cards(t: String, c: Array, selected: int, h: String, sub_title := "", 
 	queue_redraw()
 
 
+## 卡片排成幾欄（卡片太多就換行，每行放得下幾張就放幾張），以及卡片＋教學卡的總高度
+func _layout(width: float) -> Vector3:
+	var card_w := COLS * CELL
+	var card_h := ROWS * CELL
+	var per_row := maxi(1, int((width - 80.0 + GAP) / (card_w + GAP)))
+	var rows := ceili(float(cards.size()) / per_row)
+	var cards_h := rows * card_h + (rows - 1) * GAP
+	var total_h := cards_h
+	if not tips.is_empty():
+		total_h += TIP_GAP + TIP_ROWS * CELL
+	return Vector3(per_row, cards_h, total_h)
+
+
+## 上面標題、下面提示／按鈕要佔多少高度
+func _extra_h() -> float:
+	var top := 130.0 if subtitle != "" else 90.0
+	var bottom := 80.0
+	if button != "":
+		bottom = 170.0 if hint != "" else 130.0
+	return top + bottom
+
+
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), COLOR_DIM)
+	# 放不下就整個縮小（手機模式畫面只有一半大）
+	var k := 1.0
+	while k > 0.3:
+		var lay := _layout(size.x / k)
+		var tips_w := tips.size() * TIP_COLS * CELL + (tips.size() - 1) * GAP
+		if lay.z + _extra_h() <= size.y / k and tips_w + 40.0 <= size.x / k:
+			break
+		k -= 0.05
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(k, k))
+	var view := size / k   # 縮小後，用這個大小排版
 	var card_w := COLS * CELL
 	var card_h := ROWS * CELL
 	var n := cards.size()
-	# 卡片太多（結算）就換行，每行最多放得下幾張就放幾張
-	var per_row := maxi(1, int((size.x - 80.0 + GAP) / (card_w + GAP)))
-	var rows := ceili(float(n) / per_row)
-	var total_h := rows * card_h + (rows - 1) * GAP
+	var lay := _layout(view.x)
+	var per_row := int(lay.x)
+	var cards_h := lay.y
+	var total_h := lay.z
 	var tip_w := TIP_COLS * CELL
 	var tip_h := TIP_ROWS * CELL
-	var cards_h := total_h
-	if not tips.is_empty():
-		total_h += TIP_GAP + tip_h
-	var y0 := (size.y - total_h) / 2.0 + 20.0
+	var top := 130.0 if subtitle != "" else 90.0
+	var y0 := (view.y - total_h - _extra_h()) / 2.0 + top
 
 	if subtitle != "":
-		_text(title, Vector2(size.x / 2.0, y0 - 100.0), 44, COLOR_ON)
-		_text(subtitle, Vector2(size.x / 2.0, y0 - 48.0), 33, COLOR_ON)
+		_text(title, Vector2(view.x / 2.0, y0 - 100.0), 44, COLOR_ON)
+		_text(subtitle, Vector2(view.x / 2.0, y0 - 48.0), 33, COLOR_ON)
 		var sw := font.get_string_size(subtitle, HORIZONTAL_ALIGNMENT_LEFT, -1, 33).x
-		subtitle_rect = Rect2(size.x / 2.0 - sw / 2.0 - 20.0, y0 - 48.0 - 30.0, sw + 40.0, 60.0)
+		subtitle_rect = _scaled(Rect2(view.x / 2.0 - sw / 2.0 - 20.0, y0 - 48.0 - 30.0, sw + 40.0, 60.0), k)
 	else:
 		subtitle_rect = Rect2()
-		_text(title, Vector2(size.x / 2.0, y0 - 56.0), 44, COLOR_ON)
+		_text(title, Vector2(view.x / 2.0, y0 - 56.0), 44, COLOR_ON)
 
 	card_rects.clear()
 	for i in n:
@@ -76,11 +110,11 @@ func _draw() -> void:
 		var lifted := cursor >= 0 and i == cursor
 		var row := i / per_row
 		var in_row := mini(per_row, n - row * per_row)
-		var x0 := (size.x - (in_row * card_w + (in_row - 1) * GAP)) / 2.0
+		var x0 := (view.x - (in_row * card_w + (in_row - 1) * GAP)) / 2.0
 		var origin := Vector2(x0 + (i % per_row) * (card_w + GAP), y0 + row * (card_h + GAP) - (LIFT if lifted else 0.0))
 		var mid := origin.x + card_w / 2.0
 
-		card_rects.append(Rect2(origin, Vector2(card_w, card_h)))
+		card_rects.append(_scaled(Rect2(origin, Vector2(card_w, card_h)), k))
 		# 卡片底色塗黑，後面的牆才不會透出來
 		draw_rect(Rect2(origin, Vector2(card_w, card_h)), Color.BLACK)
 
@@ -100,7 +134,7 @@ func _draw() -> void:
 		draw_multiline_string(font, desc_pos, c.desc, HORIZONTAL_ALIGNMENT_CENTER, inner_w, DESC_SIZE, max_lines, color)
 
 	# 教學卡：一排在角色卡下面
-	var tx0 := (size.x - (tips.size() * tip_w + (tips.size() - 1) * GAP)) / 2.0
+	var tx0 := (view.x - (tips.size() * tip_w + (tips.size() - 1) * GAP)) / 2.0
 	for i in tips.size():
 		var tip: Dictionary = tips[i]
 		var o := Vector2(tx0 + i * (tip_w + GAP), y0 + cards_h + TIP_GAP)
@@ -113,7 +147,26 @@ func _draw() -> void:
 		var p := Vector2(o.x + CELL + 4.0, o.y + 112.0 + font.get_ascent(DESC_SIZE))
 		draw_multiline_string(font, p, tip.desc, HORIZONTAL_ALIGNMENT_CENTER, (TIP_COLS - 2) * CELL - 8.0, DESC_SIZE, lines, COLOR_TIP)
 
-	_text(hint, Vector2(size.x / 2.0, y0 + total_h + 50.0), 33, COLOR_ON)
+	if button == "":
+		button_rect = Rect2()
+		_text(hint, Vector2(view.x / 2.0, y0 + total_h + 50.0), 33, COLOR_ON)
+	else:
+		# 按鈕：一圈框字圍起來的大字，點它才會動作（避免手指誤觸直接跳過）
+		var bw := font.get_string_size(button, HORIZONTAL_ALIGNMENT_LEFT, -1, 44).x
+		var bcols := ceili(bw / CELL) + 4
+		var brows := 5
+		var bo := Vector2(view.x / 2.0 - bcols * CELL / 2.0, y0 + total_h + 30.0)
+		draw_rect(Rect2(bo, Vector2(bcols, brows) * CELL), Color.BLACK)
+		_frame(bo, bcols, brows, COLOR_ON)
+		_text(button, bo + Vector2(bcols, brows) * CELL / 2.0, 44, COLOR_ON)
+		button_rect = _scaled(Rect2(bo, Vector2(bcols, brows) * CELL), k)
+		if hint != "":
+			_text(hint, Vector2(view.x / 2.0, bo.y + brows * CELL + 30.0), 22, COLOR_TIP)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+func _scaled(r: Rect2, k: float) -> Rect2:
+	return Rect2(r.position * k, r.size * k)
 
 
 ## 點到第幾張卡片，沒點到回傳 -1

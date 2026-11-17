@@ -3,14 +3,14 @@ extends Control
 ## 手機觸控操作（選角時選「手機」模式才有虛擬搖桿和按鍵）：
 ## - 遊戲中：手指在螢幕上拖曳 = 虛擬搖桿（從按下的地方開始算方向）
 ## - 右下角兩顆虛擬按鍵：「技」= Shift，「天」= 滑鼠左鍵
-## - 選單：點卡片選它，再點一次已選的卡片 = 確定；結算畫面點任何地方 = 再來一局
+## - 選單：點卡片選它，再點一次已選的卡片 = 確定；結算畫面點「再來一局」按鈕
 ##   （選單用滑鼠點也可以，電腦模式也能用）
 ## 按鍵都是送出 InputEventAction，所以遊戲邏輯跟鍵盤共用同一套。
 
-const STICK_RADIUS := 140.0        # 搖桿拖多遠算全速
+const STICK_RADIUS := 90.0         # 搖桿拖多遠算全速
 const STICK_DEAD := 0.15           # 太小的晃動不算
-const SKILL_RADIUS := 130.0
-const SMITE_RADIUS := 100.0
+const SKILL_RADIUS := 75.0
+const SMITE_RADIUS := 58.0
 const COLOR_LINE := Color(1, 1, 1, 0.35)
 const COLOR_GLYPH := Color(1, 1, 1, 0.8)
 const COLOR_OFF := Color(1, 1, 1, 0.2)
@@ -27,11 +27,11 @@ var _button_fingers := {}          # 手指 index -> 它按下的 action（放�
 
 
 func skill_center() -> Vector2:
-	return Vector2(size.x - 200.0, size.y - 200.0)
+	return Vector2(size.x - 115.0, size.y - 115.0)
 
 
 func smite_center() -> Vector2:
-	return Vector2(size.x - 470.0, size.y - 130.0)
+	return Vector2(size.x - 275.0, size.y - 75.0)
 
 
 func _input(event: InputEvent) -> void:
@@ -84,7 +84,9 @@ func _menu_tap(finger: int, pos: Vector2) -> void:
 		main.toggle_touch_mode()
 		return
 	if cards.cursor < 0:
-		_press(finger, "confirm")          # 結算畫面：點哪裡都是再來一局
+		# 結算畫面：要點到「再來一局」按鈕才會重開
+		if cards.button_rect.has_point(pos):
+			_press(finger, "confirm")
 		return
 	var i := cards.card_at(pos)
 	if i < 0:
@@ -143,14 +145,14 @@ func _draw() -> void:
 	if _stick_finger >= 0:
 		draw_arc(_stick_origin, STICK_RADIUS, 0.0, TAU, 48, COLOR_LINE, 4.0)
 		var knob := _stick_origin + move * STICK_RADIUS
-		draw_circle(knob, 36.0, Color(1, 1, 1, 0.25))
+		draw_circle(knob, 26.0, Color(1, 1, 1, 0.25))
 
 	# 技：裡面寫剩幾次
 	var charges: int = main.skill_charges
 	var skill_on := charges > 0
 	_button(skill_center(), SKILL_RADIUS, "技", skill_on, "skill")
 	_text("●".repeat(charges) + "○".repeat(main.SKILL_MAX_CHARGES - charges),
-			skill_center() + Vector2(0, 66), 33, COLOR_GLYPH if skill_on else COLOR_OFF)
+			skill_center() + Vector2(0, 46), 22, COLOR_GLYPH if skill_on else COLOR_OFF)
 	# 天：用掉就變暗
 	_button(smite_center(), SMITE_RADIUS, "天", not main.smite_used, "smite")
 
@@ -160,7 +162,7 @@ func _button(center: Vector2, r: float, glyph: String, on: bool, action: String)
 	if held:
 		draw_circle(center, r, Color(1, 1, 1, 0.15))
 	draw_arc(center, r, 0.0, TAU, 64, COLOR_LINE if on else COLOR_OFF, 4.0)
-	_text(glyph, center, 66, COLOR_GLYPH if on else COLOR_OFF)
+	_text(glyph, center, 44, COLOR_GLYPH if on else COLOR_OFF)
 
 
 func _text(text: String, center: Vector2, font_size: int, color: Color) -> void:

@@ -567,10 +567,20 @@ func _pick_hint() -> String:
 	return "點卡片選擇，再點一次確定" if is_touch else "A D / ←→ 選擇　Space / Enter 確定"
 
 
+## 手機模式：畫面基準解析度減半，所有東西（字、卡片、地圖）看起來放大一倍
+## （看得到的範圍也跟著變小一半）
+func _apply_screen_scale() -> void:
+	var base := Vector2i(1280, 720) if is_touch else Vector2i(2560, 1440)
+	get_window().content_scale_size = base
+	if terrain != null:
+		terrain.queue_redraw()
+
+
 ## 選角畫面切換手機／電腦操作，重開後也會記得
 func toggle_touch_mode() -> void:
 	is_touch = not is_touch
 	touch_mode = 1 if is_touch else 0
+	_apply_screen_scale()
 	hud_key_skill.visible = not is_touch
 	hud_key_smite.visible = not is_touch
 	if rotate_hint != null:
@@ -1976,6 +1986,7 @@ func _build_hud() -> void:
 		var detected := DisplayServer.is_touchscreen_available() or "--touch" in OS.get_cmdline_user_args()
 		touch_mode = 1 if detected else 0
 	is_touch = touch_mode == 1
+	_apply_screen_scale()
 	touch = TouchControls.new()
 	touch.main = self
 	touch.font = font
@@ -2052,7 +2063,7 @@ func _end(result: State) -> void:
 		title = "你倒下了"
 		player.set_text("亡")
 	var stats := "存活 %s　級 %d　擊倒 %d　金 %d" % [_fmt_time(elapsed), level, kills, gold]
-	level_cards.show_cards(title, _final_level_cards(), -1, "點畫面再來一局" if is_touch else "按 Space / Enter 再來一局", stats)
+	level_cards.show_cards(title, _final_level_cards(), -1, "" if is_touch else "或按 Space / Enter", stats, [], "再來一局")
 
 
 ## 結算畫面的卡片：兩條強化線，加上每一個升過的金升級

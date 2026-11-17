@@ -267,6 +267,7 @@ class Fx:
 
 
 static var last_character := 0      # 重開時記得上次選的角色
+static var touch_mode := -1          # 操作模式：-1 還沒決定（開局自動偵測）、0 電腦、1 手機
 
 var state := State.SELECT
 var character := 0
@@ -354,6 +355,9 @@ var hud_kills: Label
 var menu: Control                  # 選角 / 升級 / 結束畫面共用
 var menu_label: Label
 var level_cards: UpgradeCards       # 升級卡片畫面
+var touch: TouchControls            # 手機觸控（虛擬搖桿、技/天按鍵）
+var is_touch := false               # 有觸控螢幕就開手機操作
+var rotate_hint: ColorRect          # 手機直拿時的「請轉橫」提示
 
 
 func _ready() -> void:
@@ -482,6 +486,7 @@ func _setup_input() -> void:
 		"move_down": [KEY_DOWN, KEY_S],
 		"skill": [KEY_SHIFT],
 		"confirm": [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER],  # 選單確定：Space 左手就按得到，Enter 也可以
+		"toggle_mode": [KEY_TAB],    # 選角畫面切換手機／電腦操作
 	}
 	for action: String in keys:
 		if InputMap.has_action(action):
@@ -501,6 +506,8 @@ func _setup_input() -> void:
 # ---------- 選角 ----------
 
 func _process_select() -> void:
+	if Input.is_action_just_pressed("toggle_mode"):
+		toggle_touch_mode()
 	var step := 0
 	if Input.is_action_just_pressed("move_left"):
 		step = -1
@@ -523,9 +530,23 @@ func _process_select() -> void:
 func _show_select() -> void:
 	var cards := []
 	for c: Dictionary in CHARACTERS:
-		cards.append({"icon": c.glyph, "name": c.name, "sub": "", "desc": c.desc})
-	level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選擇　Space / Enter 開始", "", TUTORIAL_TIPS)
+		var desc: String = c.desc.replace("Shift", "技") if is_touch else c.desc
+		cards.append({"icon": c.glyph, "name": c.name, "sub": "", "desc": desc})
+	if is_touch:
+		level_cards.show_cards("選擇角色", cards, character, "點卡片選擇，再點一次開始",
+				"操作模式：手機　（點這裡切換成電腦）", TUTORIAL_TIPS_TOUCH)
+	else:
+		level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選擇　Space / Enter 開始",
+				"操作模式：電腦　（按 Tab 或點這裡切換成手機）", TUTORIAL_TIPS)
 
+
+## 選角畫面下面的操作教學（手機版）
+const TUTORIAL_TIPS_TOUCH := [
+	{"name": "移動", "key": "拖曳螢幕", "desc": "手指按住往哪拖就往哪走，攻擊全自動"},
+	{"name": "技能", "key": "右下「技」", "desc": "人衝刺、刀跳躍，都會無敵。存兩次，5 秒回一次"},
+	{"name": "天罰", "key": "右下「天」", "desc": "一局只能用一次，清空全地圖的小兵"},
+	{"name": "選卡片", "key": "點卡片", "desc": "點一下選擇，再點一次選好的卡片確定"},
+]
 
 ## 選角畫面下面的操作教學
 const TUTORIAL_TIPS := [
@@ -536,10 +557,57 @@ const TUTORIAL_TIPS := [
 ]
 
 
+func _check_orientation() -> void:
+	var win := DisplayServer.window_get_size()
+	rotate_hint.visible = is_touch and win.y > win.x
+
+
+## 卡片畫面下面的操作提示
+func _pick_hint() -> String:
+	return "點卡片選擇，再點一次確定" if is_touch else "A D / ←→ 選擇　Space / Enter 確定"
+
+
+## 選角畫面切換手機／電腦操作，重開後也會記得
+func toggle_touch_mode() -> void:
+	is_touch = not is_touch
+	touch_mode = 1 if is_touch else 0
+	hud_key_skill.visible = not is_touch
+	hud_key_smite.visible = not is_touch
+	if rotate_hint != null:
+		_check_orientation()
+	_show_select()
+
+
+func is_playing() -> bool:
+	return state == State.PLAYING
+
+
+## 手機點了第 i 張卡片（還沒確定，只是選它）
+func touch_select(i: int) -> void:
+	match state:
+		State.SELECT:
+			character = i
+			player.set_text(CHARACTERS[character].glyph)
+			_show_select()
+		State.LEVEL_UP:
+			upgrade_cursor = i
+			_show_level_up()
+		State.POWER_UP:
+			power_cursor = i
+			_show_power_up()
+
+
 # ---------- 玩家 ----------
 
+## 移動方向：鍵盤，或手機的虛擬搖桿
+func _input_dir() -> Vector2:
+	if touch != null and touch.move != Vector2.ZERO:
+		return touch.move
+	return Input.get_vector("move_left", "move_right", "move_up", "move_down")
+
+
 func _move_player(delta: float) -> void:
-	var dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	var dir := _input_dir()
 	if dir != Vector2.ZERO:
 		facing_dir = dir.normalized()
 	player.position = terrain.slide(player.position, dir * player_speed * delta, PLAYER_RADIUS)
@@ -609,7 +677,7 @@ func _update_skill(delta: float) -> bool:
 
 
 func _start_skill() -> void:
-	var dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	var dir := _input_dir()
 	if dir != Vector2.ZERO:
 		facing_dir = dir.normalized()
 	skill_from = player.position
@@ -1584,7 +1652,7 @@ func _show_power_up() -> void:
 		var info: Dictionary = POWER_INFO[who][line]
 		var lv := _line_level(line)
 		cards.append({"icon": line, "name": info.name, "sub": "Lv %d→%d" % [lv, lv + 1], "desc": info.desc[lv + 1]})
-	level_cards.show_cards("寶箱！選一個強化", cards, power_cursor, "A D / ←→ 選擇　Space / Enter 確定")
+	level_cards.show_cards("寶箱！選一個強化", cards, power_cursor, _pick_hint())
 
 
 func _process_power_up() -> void:
@@ -1712,7 +1780,7 @@ func _show_level_up() -> void:
 	for u: Dictionary in upgrade_choices:
 		var lv: int = upgrade_levels.get(u.id, 0)
 		cards.append({"icon": u.icon, "name": u.name, "sub": "Lv %d→%d" % [lv, lv + 1], "desc": u.desc})
-	level_cards.show_cards("升級！　級 %d" % level, cards, upgrade_cursor, "A D / ←→ 選擇　Space / Enter 確定")
+	level_cards.show_cards("升級！　級 %d" % level, cards, upgrade_cursor, _pick_hint())
 
 
 func _process_level_up() -> void:
@@ -1902,12 +1970,44 @@ func _build_hud() -> void:
 	menu_label.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
 	center.add_child(menu_label)
 
+	# 手機觸控：畫在 HUD 上、卡片底下
+	# 第一次開：有觸控螢幕就預設手機模式；之後用選角畫面選的
+	if touch_mode < 0:
+		var detected := DisplayServer.is_touchscreen_available() or "--touch" in OS.get_cmdline_user_args()
+		touch_mode = 1 if detected else 0
+	is_touch = touch_mode == 1
+	touch = TouchControls.new()
+	touch.main = self
+	touch.font = font
+	touch.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	touch.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(touch)
+	if is_touch:
+		hud_key_skill.visible = false   # 手機上有虛擬按鍵，不用寫鍵盤的鍵
+		hud_key_smite.visible = false
+
 	level_cards = UpgradeCards.new()
 	level_cards.font = font
 	level_cards.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	level_cards.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	level_cards.visible = false
 	root.add_child(level_cards)
+
+	# 手機模式直拿時畫面太小：蓋一層提示請轉橫（放最上面，連卡片都蓋住）
+	rotate_hint = ColorRect.new()
+	rotate_hint.color = Color(0, 0, 0, 0.9)
+	rotate_hint.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	rotate_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var msg := Label.new()
+	msg.text = "請把手機轉橫"
+	msg.add_theme_font_size_override("font_size", 165)
+	msg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	msg.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	rotate_hint.add_child(msg)
+	root.add_child(rotate_hint)
+	get_viewport().size_changed.connect(_check_orientation)
+	_check_orientation()
 
 
 func _show_menu(text: String) -> void:
@@ -1927,6 +2027,8 @@ func _update_hud() -> void:
 	hud_key_smite.position.x = 24 + Glyph.font.get_string_size(before, HORIZONTAL_ALIGNMENT_LEFT, -1, 33).x
 	if player_bar != null:
 		player_bar.queue_redraw()
+	if touch != null and is_touch:
+		touch.refresh()
 	hud_power.text = "彈 Lv%d　刀 Lv%d" % [bullet_lv, blade_lv]
 	if final_phase:
 		var counts := {}
@@ -1950,7 +2052,7 @@ func _end(result: State) -> void:
 		title = "你倒下了"
 		player.set_text("亡")
 	var stats := "存活 %s　級 %d　擊倒 %d　金 %d" % [_fmt_time(elapsed), level, kills, gold]
-	level_cards.show_cards(title, _final_level_cards(), -1, "按 Space / Enter 再來一局", stats)
+	level_cards.show_cards(title, _final_level_cards(), -1, "點畫面再來一局" if is_touch else "按 Space / Enter 再來一局", stats)
 
 
 ## 結算畫面的卡片：兩條強化線，加上每一個升過的金升級

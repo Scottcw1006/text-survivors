@@ -29,6 +29,8 @@ var hint := ""
 var cards: Array = []              # [{icon, name, sub, desc}]，sub 可以是空字串
 var cursor := 0
 var tips: Array = []               # [{name, key, desc}]，選角時才有
+var card_rects: Array[Rect2] = []  # 每張卡片畫在哪（手機點卡片用）
+var subtitle_rect := Rect2()       # 標題下那行小字的範圍（選角時點它切換操作模式）
 
 
 func show_cards(t: String, c: Array, selected: int, h: String, sub_title := "", tip_cards := []) -> void:
@@ -61,9 +63,13 @@ func _draw() -> void:
 	if subtitle != "":
 		_text(title, Vector2(size.x / 2.0, y0 - 100.0), 44, COLOR_ON)
 		_text(subtitle, Vector2(size.x / 2.0, y0 - 48.0), 33, COLOR_ON)
+		var sw := font.get_string_size(subtitle, HORIZONTAL_ALIGNMENT_LEFT, -1, 33).x
+		subtitle_rect = Rect2(size.x / 2.0 - sw / 2.0 - 20.0, y0 - 48.0 - 30.0, sw + 40.0, 60.0)
 	else:
+		subtitle_rect = Rect2()
 		_text(title, Vector2(size.x / 2.0, y0 - 56.0), 44, COLOR_ON)
 
+	card_rects.clear()
 	for i in n:
 		var on := cursor < 0 or i == cursor
 		var color := COLOR_ON if on else COLOR_OFF
@@ -74,6 +80,7 @@ func _draw() -> void:
 		var origin := Vector2(x0 + (i % per_row) * (card_w + GAP), y0 + row * (card_h + GAP) - (LIFT if lifted else 0.0))
 		var mid := origin.x + card_w / 2.0
 
+		card_rects.append(Rect2(origin, Vector2(card_w, card_h)))
 		# 卡片底色塗黑，後面的牆才不會透出來
 		draw_rect(Rect2(origin, Vector2(card_w, card_h)), Color.BLACK)
 
@@ -107,6 +114,14 @@ func _draw() -> void:
 		draw_multiline_string(font, p, tip.desc, HORIZONTAL_ALIGNMENT_CENTER, (TIP_COLS - 2) * CELL - 8.0, DESC_SIZE, lines, COLOR_TIP)
 
 	_text(hint, Vector2(size.x / 2.0, y0 + total_h + 50.0), 33, COLOR_ON)
+
+
+## 點到第幾張卡片，沒點到回傳 -1
+func card_at(pos: Vector2) -> int:
+	for i in card_rects.size():
+		if card_rects[i].grow(LIFT).has_point(pos):
+			return i
+	return -1
 
 
 ## 用一圈「框」字畫出 cols × rows 的外框

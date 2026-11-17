@@ -15,6 +15,11 @@ const DESC_LINE := 26.0            # 說明文字的行高（估算能放幾行�
 const COLOR_ON := Color.WHITE
 const COLOR_OFF := Color(1, 1, 1, 0.35)
 const COLOR_DIM := Color(0, 0, 0, 0.8)
+# 教學卡（選角畫面下面那排操作說明）：比較小、比較淡，不能選
+const TIP_COLS := 14
+const TIP_ROWS := 11
+const TIP_GAP := 60.0              # 角色卡和教學卡之間的距離
+const COLOR_TIP := Color(1, 1, 1, 0.7)
 
 var font: Font
 var title := ""
@@ -22,10 +27,12 @@ var subtitle := ""                 # 標題下面的一行小字（結算用）
 var hint := ""
 var cards: Array = []              # [{icon, name, sub, desc}]，sub 可以是空字串
 var cursor := 0
+var tips: Array = []               # [{name, key, desc}]，選角時才有
 
 
-func show_cards(t: String, c: Array, selected: int, h: String, sub_title := "") -> void:
+func show_cards(t: String, c: Array, selected: int, h: String, sub_title := "", tip_cards := []) -> void:
 	title = t
+	tips = tip_cards
 	subtitle = sub_title
 	cards = c
 	cursor = selected
@@ -43,6 +50,11 @@ func _draw() -> void:
 	var per_row := maxi(1, int((size.x - 80.0 + GAP) / (card_w + GAP)))
 	var rows := ceili(float(n) / per_row)
 	var total_h := rows * card_h + (rows - 1) * GAP
+	var tip_w := TIP_COLS * CELL
+	var tip_h := TIP_ROWS * CELL
+	var cards_h := total_h
+	if not tips.is_empty():
+		total_h += TIP_GAP + tip_h
 	var y0 := (size.y - total_h) / 2.0 + 20.0
 
 	if subtitle != "":
@@ -64,13 +76,9 @@ func _draw() -> void:
 		# 卡片底色塗黑，後面的牆才不會透出來
 		draw_rect(Rect2(origin, Vector2(card_w, card_h)), Color.BLACK)
 
-		# 外框：一圈「框」字
-		for cx in COLS:
-			for cy in ROWS:
-				if cx == 0 or cy == 0 or cx == COLS - 1 or cy == ROWS - 1:
-					_text(BORDER_CHAR, origin + Vector2((cx + 0.5) * CELL, (cy + 0.5) * CELL), BORDER_SIZE, color)
-
 		var c: Dictionary = cards[i]
+		_frame(origin, COLS, ROWS, color)
+
 		_text(c.icon, Vector2(mid, origin.y + 92.0), 66, color)
 		_text(c.name, Vector2(mid, origin.y + 172.0), 33, color)
 		var desc_top := 206.0
@@ -83,7 +91,29 @@ func _draw() -> void:
 		var desc_pos := Vector2(origin.x + CELL + 4.0, origin.y + desc_top + font.get_ascent(DESC_SIZE))
 		draw_multiline_string(font, desc_pos, c.desc, HORIZONTAL_ALIGNMENT_CENTER, inner_w, DESC_SIZE, max_lines, color)
 
+	# 教學卡：一排在角色卡下面
+	var tx0 := (size.x - (tips.size() * tip_w + (tips.size() - 1) * GAP)) / 2.0
+	for i in tips.size():
+		var tip: Dictionary = tips[i]
+		var o := Vector2(tx0 + i * (tip_w + GAP), y0 + cards_h + TIP_GAP)
+		var tmid := o.x + tip_w / 2.0
+		draw_rect(Rect2(o, Vector2(tip_w, tip_h)), Color.BLACK)
+		_frame(o, TIP_COLS, TIP_ROWS, COLOR_TIP)
+		_text(tip.name, Vector2(tmid, o.y + 48.0), 33, COLOR_ON)
+		_text(tip.key, Vector2(tmid, o.y + 88.0), 22, Color(1.0, 0.85, 0.4))
+		var lines := int((tip_h - CELL - 8.0 - 112.0) / DESC_LINE)
+		var p := Vector2(o.x + CELL + 4.0, o.y + 112.0 + font.get_ascent(DESC_SIZE))
+		draw_multiline_string(font, p, tip.desc, HORIZONTAL_ALIGNMENT_CENTER, (TIP_COLS - 2) * CELL - 8.0, DESC_SIZE, lines, COLOR_TIP)
+
 	_text(hint, Vector2(size.x / 2.0, y0 + total_h + 50.0), 33, COLOR_ON)
+
+
+## 用一圈「框」字畫出 cols × rows 的外框
+func _frame(origin: Vector2, cols: int, rows: int, color: Color) -> void:
+	for cx in cols:
+		for cy in rows:
+			if cx == 0 or cy == 0 or cx == cols - 1 or cy == rows - 1:
+				_text(BORDER_CHAR, origin + Vector2((cx + 0.5) * CELL, (cy + 0.5) * CELL), BORDER_SIZE, color)
 
 
 ## 以 center 為中心畫一行字

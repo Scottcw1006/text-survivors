@@ -521,7 +521,16 @@ func _show_select() -> void:
 	var cards := []
 	for c: Dictionary in CHARACTERS:
 		cards.append({"icon": c.glyph, "name": c.name, "sub": "", "desc": c.desc})
-	level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選擇　Space / Enter 開始")
+	level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選擇　Space / Enter 開始", "", TUTORIAL_TIPS)
+
+
+## 選角畫面下面的操作教學
+const TUTORIAL_TIPS := [
+	{"name": "移動", "key": "WASD / ↑↓←→", "desc": "攻擊全自動，只要專心走位、撿「金」升級"},
+	{"name": "技能", "key": "Shift", "desc": "人衝刺、刀跳躍，都會無敵。存兩次，5 秒回一次"},
+	{"name": "天罰", "key": "滑鼠左鍵", "desc": "一局只能用一次，清空全地圖的小兵"},
+	{"name": "選卡片", "key": "A D / ←→", "desc": "升級、開寶箱時左右選，按 Space 或 Enter 確定"},
+]
 
 
 # ---------- 玩家 ----------

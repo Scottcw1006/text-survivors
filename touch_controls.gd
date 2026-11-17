@@ -2,7 +2,7 @@ class_name TouchControls
 extends Control
 ## 手機觸控操作（選角時選「手機」模式才有虛擬搖桿和按鍵）：
 ## - 遊戲中：手指在螢幕上拖曳 = 虛擬搖桿（從按下的地方開始算方向）
-## - 右下角兩顆虛擬按鍵：「技」= Shift，「天」= 滑鼠左鍵
+## - 右下角兩顆虛擬按鍵：「技」= Shift，「天」= 滑鼠左鍵；右上角「停」= Esc 暫停
 ## - 選單：點卡片選它，再點一次已選的卡片 = 確定；結算畫面點「再來一局」按鈕
 ##   （選單用滑鼠點也可以，電腦模式也能用）
 ## 按鍵都是送出 InputEventAction，所以遊戲邏輯跟鍵盤共用同一套。
@@ -11,6 +11,7 @@ const STICK_RADIUS := 90.0         # 搖桿拖多遠算全速
 const STICK_DEAD := 0.15           # 太小的晃動不算
 const SKILL_RADIUS := 75.0
 const SMITE_RADIUS := 58.0
+const PAUSE_RADIUS := 34.0
 const COLOR_LINE := Color(1, 1, 1, 0.35)
 const COLOR_GLYPH := Color(1, 1, 1, 0.8)
 const COLOR_OFF := Color(1, 1, 1, 0.2)
@@ -28,6 +29,10 @@ var _button_fingers := {}          # 手指 index -> 它按下的 action（放�
 
 func skill_center() -> Vector2:
 	return Vector2(size.x - 115.0, size.y - 115.0)
+
+
+func pause_center() -> Vector2:
+	return Vector2(size.x - 60.0, 150.0)
 
 
 func smite_center() -> Vector2:
@@ -60,11 +65,16 @@ func _input(event: InputEvent) -> void:
 
 
 func _touch_down(finger: int, pos: Vector2) -> void:
+	if main.state == main.State.PAUSED:
+		_press(finger, "pause")            # 暫停中：點哪裡都是繼續
+		return
 	if not main.is_playing():
 		_menu_tap(finger, pos)
 		return
 	if main.is_touch:
-		if pos.distance_to(skill_center()) < SKILL_RADIUS * 1.2:
+		if pos.distance_to(pause_center()) < PAUSE_RADIUS * 1.4:
+			_press(finger, "pause")
+		elif pos.distance_to(skill_center()) < SKILL_RADIUS * 1.2:
 			_press(finger, "skill")
 		elif pos.distance_to(smite_center()) < SMITE_RADIUS * 1.2:
 			_press(finger, "smite")
@@ -155,14 +165,16 @@ func _draw() -> void:
 			skill_center() + Vector2(0, 46), 22, COLOR_GLYPH if skill_on else COLOR_OFF)
 	# 天：用掉就變暗
 	_button(smite_center(), SMITE_RADIUS, "天", not main.smite_used, "smite")
+	# 停：暫停（手機沒有 Esc）
+	_button(pause_center(), PAUSE_RADIUS, "停", true, "pause", 33)
 
 
-func _button(center: Vector2, r: float, glyph: String, on: bool, action: String) -> void:
+func _button(center: Vector2, r: float, glyph: String, on: bool, action: String, glyph_size := 44) -> void:
 	var held := _button_fingers.values().has(action)
 	if held:
 		draw_circle(center, r, Color(1, 1, 1, 0.15))
 	draw_arc(center, r, 0.0, TAU, 64, COLOR_LINE if on else COLOR_OFF, 4.0)
-	_text(glyph, center, 44, COLOR_GLYPH if on else COLOR_OFF)
+	_text(glyph, center, glyph_size, COLOR_GLYPH if on else COLOR_OFF)
 
 
 func _text(text: String, center: Vector2, font_size: int, color: Color) -> void:

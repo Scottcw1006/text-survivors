@@ -208,7 +208,7 @@ const CHARACTERS := [
 	{"glyph": "刀", "name": "近身斬擊", "desc": "扇形揮砍，一次砍多個\nShift：跳五格，落地震殺周圍敵人"},
 ]
 
-enum State { SELECT, PLAYING, LEVEL_UP, DEAD, WON, POWER_UP }
+enum State { SELECT, PLAYING, LEVEL_UP, DEAD, WON, POWER_UP, PAUSED }
 
 
 class Bullet:
@@ -358,6 +358,7 @@ var level_cards: UpgradeCards       # 升級卡片畫面
 var touch: TouchControls            # 手機觸控（虛擬搖桿、技/天按鍵）
 var is_touch := false               # 有觸控螢幕就開手機操作
 var rotate_hint: ColorRect          # 手機直拿時的「請轉橫」提示
+var final_frame: Control            # 決戰時整個畫面外圍的一圈紅色「戰」
 
 
 func _ready() -> void:
@@ -420,6 +421,14 @@ func _process(delta: float) -> void:
 			if Input.is_action_just_pressed("confirm"):
 				get_tree().reload_current_scene()
 			return
+		State.PAUSED:
+			if Input.is_action_just_pressed("pause"):
+				_set_paused(false)
+			return
+
+	if Input.is_action_just_pressed("pause"):
+		_set_paused(true)
+		return
 
 	if hitstop > 0.0:
 		hitstop -= delta
@@ -487,6 +496,7 @@ func _setup_input() -> void:
 		"skill": [KEY_SHIFT],
 		"confirm": [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER],  # 選單確定：Space 左手就按得到，Enter 也可以
 		"toggle_mode": [KEY_TAB],    # 選角畫面切換手機／電腦操作
+		"pause": [KEY_ESCAPE],       # 遊戲中暫停／繼續
 	}
 	for action: String in keys:
 		if InputMap.has_action(action):
@@ -562,6 +572,21 @@ func _check_orientation() -> void:
 	rotate_hint.visible = is_touch and win.y > win.x
 
 
+## 暫停／繼續：整個遊戲停住（連飛散的字、斬擊特效也停），畫面蓋一層「暫停」
+func _set_paused(on: bool) -> void:
+	state = State.PAUSED if on else State.PLAYING
+	for child in get_children():
+		if child is TextParticles or child is SlashFx:
+			child.process_mode = Node.PROCESS_MODE_DISABLED if on else Node.PROCESS_MODE_INHERIT
+	if on:
+		_show_menu("暫停\n\n" + ("點畫面繼續" if is_touch else "按 Esc 繼續"))
+		menu_label.add_theme_font_size_override("font_size", 44)
+	else:
+		menu.visible = false
+	if touch != null:
+		touch.refresh()
+
+
 ## 卡片畫面下面的操作提示
 func _pick_hint() -> String:
 	return "點卡片選擇，再點一次確定" if is_touch else "A D / ←→ 選擇　Space / Enter 確定"
@@ -572,6 +597,9 @@ func _pick_hint() -> String:
 func _apply_screen_scale() -> void:
 	var base := Vector2i(1280, 720) if is_touch else Vector2i(2560, 1440)
 	get_window().content_scale_size = base
+	# 手機畫面比較窄，時間／決戰那行放到第二排，才不會跟左邊的血條疊在一起
+	if hud_time != null:
+		hud_time.position.y = 70 if is_touch else 16
 	if terrain != null:
 		terrain.queue_redraw()
 
@@ -1741,6 +1769,33 @@ func _edge_point(target: Vector2) -> Vector2:
 	return player.position + to * t
 
 
+## 決戰的紅框：畫面四邊一圈紅色「戰」字，慢慢一明一暗地閃
+const FINAL_FRAME_CHAR := "戰"
+const FINAL_FRAME_SIZE := 33        # 電腦模式；手機模式畫面已經放大一倍，用 22
+const FINAL_FRAME_CELL := 44.0
+
+
+func _draw_final_frame() -> void:
+	var size := final_frame.size
+	var pulse := 0.45 + 0.25 * sin(Time.get_ticks_msec() / 1000.0 * TAU * 0.5)
+	var color := Color(COLOR_ENEMY_BOSS, pulse)
+	var fs := 22 if is_touch else FINAL_FRAME_SIZE
+	var cell := 30.0 if is_touch else FINAL_FRAME_CELL
+	var cols := int(size.x / cell)
+	var rows := int(size.y / cell)
+	var gap := Vector2(size.x - cols * cell, size.y - rows * cell) / 2.0
+	var ascent := Glyph.font.get_ascent(fs)
+	var height := Glyph.font.get_height(fs)
+	var w := Glyph.font.get_string_size(FINAL_FRAME_CHAR, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	for cx in cols:
+		for cy in rows:
+			if cx != 0 and cy != 0 and cx != cols - 1 and cy != rows - 1:
+				continue
+			var c := gap + Vector2(cx + 0.5, cy + 0.5) * cell
+			final_frame.draw_string(Glyph.font, Vector2(c.x - w / 2.0, c.y + ascent - height / 2.0),
+					FINAL_FRAME_CHAR, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, color)
+
+
 ## 主角頭上的小血條
 func _draw_player_bar() -> void:
 	const W := 48.0
@@ -1926,6 +1981,13 @@ func _build_hud() -> void:
 	hurt_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(hurt_overlay)
 
+	final_frame = Control.new()
+	final_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	final_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	final_frame.visible = false
+	final_frame.draw.connect(_draw_final_frame)
+	root.add_child(final_frame)
+
 	hud_hp = Label.new()
 	hud_hp.position = Vector2(24, 16)
 	root.add_child(hud_hp)
@@ -2049,6 +2111,9 @@ func _update_hud() -> void:
 		for k: String in counts:
 			parts.append("%s ×%d" % [k, counts[k]])
 		hud_time.text = "決戰　" + "　".join(parts)
+		hud_time.add_theme_color_override("font_color", COLOR_ENEMY_BOSS)
+		final_frame.visible = true
+		final_frame.queue_redraw()
 	else:
 		hud_time.text = _fmt_time(GAME_DURATION - elapsed)
 	hud_kills.text = "級 %d　金 %d/%d　擊倒 %d\n敵血 ×%.1f" % [level, xp, _xp_needed(), kills, _hp_mult()]

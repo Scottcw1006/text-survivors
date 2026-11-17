@@ -353,6 +353,8 @@ var hud_key_smite: Label            # 「天」下面的操作鍵說明
 var hud_power: Label
 var hud_time: Label
 var hud_boss: Label                 # 決戰時上方的最終王血條
+var hud_final_hint: Label           # 決戰開始時畫面中上方的「打倒全部最終王！」
+var final_hint_time := 0.0          # 提示還要顯示幾秒
 var hud_kills: Label
 var menu: Control                  # 選角 / 升級 / 結束畫面共用
 var menu_label: Label
@@ -437,6 +439,7 @@ func _process(delta: float) -> void:
 		return
 
 	elapsed += delta
+	final_hint_time = maxf(0.0, final_hint_time - delta)
 	if not final_phase and elapsed >= GAME_DURATION:
 		_start_final_phase()
 	if final_phase and final_bosses.is_empty():
@@ -606,6 +609,13 @@ func _apply_screen_scale() -> void:
 		# 手機畫面比較窄：血條用小一號的字，放在決戰那行下面
 		hud_boss.position.y = 116 if is_touch else 62
 		hud_boss.add_theme_font_size_override("font_size", 22 if is_touch else 33)
+	if hud_final_hint != null:
+		# 手機畫面上方太擠：提示改小一點、放到主角下面
+		hud_final_hint.anchor_top = 0.62 if is_touch else 0.0
+		hud_final_hint.anchor_bottom = 0.82 if is_touch else 0.5
+		hud_final_hint.offset_top = 0
+		hud_final_hint.offset_bottom = 0
+		hud_final_hint.add_theme_font_size_override("font_size", 44 if is_touch else 66)
 	if terrain != null:
 		terrain.queue_redraw()
 
@@ -816,6 +826,7 @@ func _start_final_phase() -> void:
 	var banner := particles.add("決戰", player.position + Vector2(0, -120), Vector2(0, -20), 2.0, 66, COLOR_ENEMY_BOSS)
 	banner.grow = 0.2
 	_shake(12.0)
+	final_hint_time = FINAL_HINT_TIME
 
 
 # ---------- 敵人 ----------
@@ -1776,6 +1787,9 @@ func _edge_point(target: Vector2) -> Vector2:
 	return player.position + to * t
 
 
+const FINAL_HINT_TIME := 4.0        # 決戰開始的提示顯示幾秒
+
+
 ## 決戰時上方顯示每一隻最終王的血條（打倒的顯示「擊倒」），讓玩家知道要把它們全部打倒
 func _update_boss_bars() -> void:
 	var alive := final_bosses.duplicate()
@@ -2054,6 +2068,18 @@ func _build_hud() -> void:
 	hud_boss.visible = false
 	root.add_child(hud_boss)
 
+	hud_final_hint = Label.new()
+	hud_final_hint.text = "打倒全部最終王！"
+	hud_final_hint.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hud_final_hint.anchor_bottom = 0.5   # 放在畫面上半部的中間，不擋到主角
+	hud_final_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hud_final_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hud_final_hint.add_theme_font_size_override("font_size", 66)
+	hud_final_hint.add_theme_color_override("font_color", COLOR_ENEMY_BOSS)
+	hud_final_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud_final_hint.visible = false
+	root.add_child(hud_final_hint)
+
 	hud_kills = Label.new()
 	hud_kills.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	hud_kills.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -2149,6 +2175,9 @@ func _update_hud() -> void:
 		hud_time.text = "決戰　" + "　".join(parts)
 		hud_time.add_theme_color_override("font_color", COLOR_ENEMY_BOSS)
 		_update_boss_bars()
+		# 「打倒全部最終王！」顯示幾秒，最後一秒淡出
+		hud_final_hint.visible = final_hint_time > 0.0
+		hud_final_hint.modulate.a = clampf(final_hint_time, 0.0, 1.0)
 		final_frame.visible = true
 		final_frame.queue_redraw()
 	else:

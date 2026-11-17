@@ -21,6 +21,7 @@ var knock := Vector2.ZERO   # 擊退速度，會慢慢衰減
 var knock_resist := 1.0    # 擊退倍率，王比較推不動
 var is_boss := false       # 王、大弓：不會被瞬殺、死掉特效比較大
 var shoot_range := 300.0   # 遠程敵人：多近開始放箭
+var shoot_interval := 2.0  # 遠程敵人：幾秒放一次箭
 var volley := 1            # 遠程敵人：一次放幾支箭（扇形）
 
 var base_color := Color.WHITE

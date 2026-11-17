@@ -51,6 +51,8 @@ const RAT_GROUP := 4                # 鼠一次來幾隻
 const BIRD_GROUP := 3               # 鳥一次來幾隻
 const FINAL_SIZE_MULT := 1.3        # 最終王的字放大幾倍（會取最近的 11 的倍數，像素字才銳利）
 const FINAL_HP_MULT := 2.0          # 最終王的血量倍率
+const FINAL_SPEED_MULT := 1.5       # 最終王的移動速度倍率
+const FINAL_FIRE_RATE_MULT := 1.5   # 最終王（大弓）放箭的頻率倍率
 const ARCHER_RANGE := 300.0         # 弓在這個距離內、看得到你就停下來放箭
 const ARROW_INTERVAL := 2.0
 const ARROW_SPEED := 220.0
@@ -690,6 +692,10 @@ func _start_final_phase() -> void:
 		boss.radius *= FINAL_SIZE_MULT
 		boss.max_hp *= FINAL_HP_MULT
 		boss.hp = boss.max_hp
+		boss.speed *= FINAL_SPEED_MULT
+		boss.knock_resist = 0.0   # 完全不吃擊退
+		boss.shoot_interval /= FINAL_FIRE_RATE_MULT
+		boss.shoot_cd = minf(boss.shoot_cd, boss.shoot_interval)
 		boss.queue_redraw()
 		final_bosses.append(boss)
 	var banner := particles.add("決戰", player.position + Vector2(0, -120), Vector2(0, -20), 2.0, 66, COLOR_ENEMY_BOSS)
@@ -777,6 +783,7 @@ func _spawn_enemy(kind: String, pos: Vector2) -> void:
 	var e := Enemy.new().setup_type(kind, ENEMY_TYPES[kind], _hp_mult())
 	e.position = pos
 	e.z_index = 3 if ENEMY_TYPES[kind].get("boss", false) else 2
+	e.shoot_interval = ARROW_INTERVAL
 	e.shoot_cd = randf() * ARROW_INTERVAL
 	add_child(e)
 	enemies.append(e)
@@ -798,7 +805,7 @@ func _move_enemies(delta: float) -> void:
 			if to_player.length() < e.shoot_range and _line_clear(e.position, player.position):
 				vel = Vector2.ZERO
 				if e.shoot_cd <= 0.0:
-					e.shoot_cd = ARROW_INTERVAL
+					e.shoot_cd = e.shoot_interval
 					_shoot_arrow(e)
 		# 互相推開，避免全部疊在同一點
 		var push := Vector2.ZERO

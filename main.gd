@@ -1281,12 +1281,15 @@ func _end_charge(e: Enemy) -> void:
 ## 犇的爆炸：一圈小「爆」，範圍內的玩家受傷
 func _enemy_blast(e: Enemy) -> void:
 	audio.play("explode")
-	var fx := SlashFx.new().setup(randf() * TAU, TAU, BLAST_RADIUS, false)
-	fx.glyph = "爆"
-	fx.color = e.base_color
-	fx.position = e.position
-	fx.z_index = 5
-	add_child(fx)
+	# 跟刀落地的「震」一樣：一圈字同時出現再淡掉（不是揮擊那種旋轉掃過去）
+	var fx := Fx.new()
+	var count := 10
+	for i in count:
+		var g := _fx_glyph("爆", e.position + Vector2.from_angle(TAU * i / count) * BLAST_RADIUS * 0.8)
+		g.color = e.base_color
+		fx.nodes.append(g)
+	_add_fx(fx, 0.3)
+	_shake(4.0)
 	if player.position.distance_to(e.position) < BLAST_RADIUS + PLAYER_RADIUS:
 		_hurt_player(BLAST_DAMAGE)
 

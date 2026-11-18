@@ -142,6 +142,13 @@ const CANNON_BIG_RADIUS := 360.0      # 巨砲半徑 10 格
 const CANNON_BIG_MULT := 3.0          # 巨砲傷害倍率
 const CANNON_PIERCE_BONUS := 0.25     # 每一級「穿」讓砲的傷害 +25%
 const COLOR_CANNON := Color(1.0, 0.55, 0.2)
+# ---------- 刀＋影 ----------
+const SHADE_COLOR := Color(0.65, 0.65, 1.0, 0.5)    # 分身本體（半透明）
+const SHADE_FX_COLOR := Color(0.7, 0.7, 1.0, 0.7)   # 分身的斬擊特效
+const SHADE_GAP := 56.0               # 分身跟主角的距離
+const SHADE_SPEED := 360.0            # Lv3 以上分身自己衝過去的速度
+const SHADE_LEASH := 300.0            # 分身最遠離開主角多遠
+const SHADE_WEAK := 0.5               # Lv1～3 分身傷害倍率
 const EXPLOSION_LINGER := 0.5         # 爆炸的字留在畫面上多久（只打一次）
 const HEAL_INTERVAL := 25.0          # 每幾秒出現一顆補血愛心
 const HEAL_AMOUNT := 20               # 一顆補多少血
@@ -216,6 +223,12 @@ const POWER_INFO := {
 			"三連斬：\n連斬後換手再斬，\n一刀比一刀大；\n斬擊可以砍掉\n飛來的矢",
 			"雙刀連斬：\n兩刀像剪刀合起，\n再反過來打開，\n範圍同三連斬\n後兩刀（共四刀）",
 			"殘影斬：\n270° 大斬擊，\n殘留 0.5 秒，\n結束時再打一次，\n殘留時也會砍矢"]},
+		"影": {"name": "影分身", "desc": ["",
+			"影分身：\n身後出現一個\n半透明的「刀」，\n跟著一起揮刀\n（傷害 50%）",
+			"兩個分身，\n左右各一",
+			"分身會自己\n衝向附近的\n敵人去砍",
+			"分身傷害\n提高到 100%",
+			"完全繼承：\n分身使用本體的\n所有強化與招式\n（刀法、斬擊波、\n落地震）"]},
 		"彈": {"name": "斬擊波", "desc": ["",
 			"斬擊波：\n自動射出斬擊波，\n飛 8 格，\n可穿透 2 個敵人",
 			"大斬擊波：\n兩倍大",
@@ -228,7 +241,7 @@ const POWER_INFO := {
 # 升級：吃「金」累積經驗，升級時三選一
 const XP_FIRST_LEVEL := 6           # 升到 2 級要幾個金
 const XP_STEP := 4                  # 之後每級多要幾個
-const UPGRADE_MAX_LEVEL := 5
+const UPGRADE_MAX_LEVEL := 7          # 一般升級（力、疾…）每種最多幾級
 ## who：all = 兩個角色都有，否則只給那個角色
 const UPGRADES := [
 	{"id": "power",  "icon": "力", "name": "攻擊力",   "desc": "傷害 +20%", "who": "all"},
@@ -270,12 +283,21 @@ class Shell:
 	var big := false            # Lv5 中間那發巨砲：不撞敵人、不撞牆，飛到定點才爆炸
 
 
+## 刀＋影：影分身
+class Shade:
+	var node: Glyph
+	var cd := 0.0               # 揮刀冷卻
+	var wave_cd := 0.0          # Lv5：自己的斬擊波冷卻
+	var slot := 0               # 第幾個分身（決定站位）
+
+
 class Chest:
 	var node: Glyph
 
 
 ## 刀＋彈：飛行中的斬擊波
 class Wave:
+	var scale := 1.0            # 傷害倍率（影分身射的）
 	var node: WaveFx
 	var dir: Vector2
 	var big := false
@@ -288,6 +310,7 @@ class Wave:
 
 ## 殘留在地上的斬擊（殘影斬、空間斬擊）：每 0.5 秒對範圍內的敵人造成一次傷害
 class Zone:
+	var scale := 1.0            # 傷害倍率（影分身的殘影）
 	var origin: Vector2
 	var facing: float
 	var arc: float
@@ -336,6 +359,12 @@ var power_cursor := 0
 var bullet_lv := 1                 # 強化線「彈」
 var blade_lv := 1                  # 強化線「刀」
 var cannon_lv := 0                 # 強化線「砲」（只有人有，從 Lv0 開始）
+var shadow_lv := 0                 # 強化線「影」（只有刀有，從 Lv0 開始）
+var shades: Array[Shade] = []      # 影分身
+## 刀的攻擊從哪裡出、傷害倍率多少：平常是主角本人，影分身出手時暫時換成分身的位置
+var atk_from := Vector2.ZERO
+var atk_scale := 1.0
+var atk_color := Color.WHITE
 var cannon_cd := 0.0
 var shells: Array[Shell] = []
 var combo: Array = []              # 刀＋刀：排好的後續連擊
@@ -381,7 +410,7 @@ var next_chest_time := CHEST_INTERVAL
 var next_heal_time := HEAL_INTERVAL
 var hearts: Array[HeartPickup] = []
 var heart_pointer: HeartPickup      # 最近的愛心在畫面外時，畫面邊緣的提示
-var final_phase := false           # 三分鐘後的決戰：不再掉金、不再出寶箱
+var final_phase := false           # 三分鐘後的決戰：還是會掉金，但不再出寶箱
 var final_bosses: Array[Enemy] = []
 var final_roster: Array[String] = []  # 決戰一開始有哪些王（照順序），血條用；死掉的從 final_bosses 拿掉
 var smite_used := false            # 天罰一局只能用一次
@@ -948,8 +977,20 @@ func _step_skill(delta: float) -> void:
 func _land() -> void:
 	audio.play("land")
 	land_grace = LAND_GRACE
+	_land_at(player.position)
+	# 影 Lv5：分身也跟著落地震
+	if shadow_lv >= 5:
+		for sh in shades:
+			_push_atk(sh.node.position, 1.0, SHADE_FX_COLOR)
+			_land_at(sh.node.position)
+			_pop_atk()
+	_shake(8.0)
+	_hitstop(0.05)
+
+
+func _land_at(origin: Vector2) -> void:
 	for e: Enemy in enemies.duplicate():
-		if e.position.distance_to(player.position) > JUMP_LAND_RANGE + e.radius:
+		if e.position.distance_to(origin) > JUMP_LAND_RANGE + e.radius:
 			continue
 		if e.is_boss:
 			_damage_enemy(e, _damage() * BOSS_LAND_MULT)
@@ -959,10 +1000,8 @@ func _land() -> void:
 	var count := 12   # 範圍變大，「震」也多幾個才不會太稀
 	for i in count:
 		var a := TAU * i / count
-		fx.nodes.append(_fx_glyph("震", player.position + Vector2.from_angle(a) * JUMP_LAND_RANGE * 0.8))
+		fx.nodes.append(_fx_glyph("震", origin + Vector2.from_angle(a) * JUMP_LAND_RANGE * 0.8))
 	_add_fx(fx, 0.25)
-	_shake(8.0)
-	_hitstop(0.05)
 
 
 func _is_blade() -> bool:
@@ -971,7 +1010,7 @@ func _is_blade() -> bool:
 
 # ---------- 決戰 ----------
 
-## 三分鐘到：出現最終王（兩隻王、一隻大弓），打倒全部才算贏；之後不再掉金、不再出寶箱
+## 三分鐘到：出現最終王（兩隻王、一隻大弓），打倒全部才算贏；之後還是會掉金，但不再出寶箱
 func _start_final_phase() -> void:
 	final_phase = true
 	audio.play("final")
@@ -1171,7 +1210,7 @@ func _move_arrows(delta: float) -> void:
 
 
 func _damage() -> float:
-	return BASE_DAMAGE * damage_mult
+	return BASE_DAMAGE * damage_mult * atk_scale
 
 
 ## 打敵人：跳傷害數字、擊退，打死就碎開並掉落
@@ -1226,12 +1265,8 @@ func _kill_enemy(e: Enemy) -> void:
 	var cell: Array = grid.get(_cell(e.position), [])
 	cell.erase(e)
 	_shatter(e)
-	if final_phase:
-		# 決戰中不掉金、不掉寶箱
-		e.queue_free()
-		kills += 1
-		return
-	if e.is_boss:
+	# 決戰中一樣掉金，但王不掉寶箱
+	if e.is_boss and not final_phase:
 		_spawn_chest_near(e.position)
 	for i in e.gold:
 		var spread := Vector2.ZERO if e.gold == 1 else Vector2(randf_range(-20, 20), randf_range(-20, 20))
@@ -1243,10 +1278,12 @@ func _kill_enemy(e: Enemy) -> void:
 # ---------- 攻擊 ----------
 
 func _attack(delta: float) -> void:
+	atk_from = player.position
 	if _is_blade():
 		_update_combo(delta)
 		_update_zones(delta)
 		_update_blade_shots(delta)
+		_update_shades(delta)
 	else:
 		_update_cannon(delta)
 	attack_cd -= delta
@@ -1400,8 +1437,112 @@ func _slash() -> void:
 	if target == null:
 		return
 	attack_cd = SLASH_INTERVAL * attack_mult
+	_slash_at(target)
+
+
+# ---------- 刀＋影 ----------
+## Lv1 身後一個分身跟著揮刀（傷害 50%）　Lv2 兩個分身左右各一　Lv3 分身自己衝向附近的敵人
+## Lv4 分身傷害 100%　Lv5 分身完全繼承本體：刀法、斬擊波、範圍、攻速、攻擊力、落地震
+
+var _atk_stack: Array = []
+
+
+## 暫時把「刀的攻擊從哪裡出」換成分身（用完一定要 _pop_atk）
+func _push_atk(from: Vector2, scale: float, color: Color) -> void:
+	_atk_stack.append([atk_from, atk_scale, atk_color])
+	atk_from = from
+	atk_scale = scale
+	atk_color = color
+
+
+func _pop_atk() -> void:
+	var prev: Array = _atk_stack.pop_back()
+	atk_from = prev[0]
+	atk_scale = prev[1]
+	atk_color = prev[2]
+
+
+func _update_shades(delta: float) -> void:
+	var want := 0 if shadow_lv < 1 else (1 if shadow_lv == 1 else 2)
+	while shades.size() < want:
+		var sh := Shade.new()
+		sh.slot = shades.size()
+		sh.node = Glyph.new().setup("刀", GLYPH_SIZE, SHADE_COLOR)
+		sh.node.position = player.position
+		sh.node.z_index = 9
+		sh.cd = randf() * SLASH_INTERVAL
+		add_child(sh.node)
+		shades.append(sh)
+	for sh in shades:
+		_move_shade(sh, delta)
+		_shade_attack(sh, delta)
+
+
+## 分身的站位：Lv1 在身後；Lv2 以上左右各一
+func _shade_slot_pos(sh: Shade) -> Vector2:
+	var back := -facing_dir
+	if shadow_lv <= 1:
+		return player.position + back * SHADE_GAP
+	var side := facing_dir.orthogonal() * (1.0 if sh.slot == 0 else -1.0)
+	return player.position + side * SHADE_GAP + back * 12.0
+
+
+func _move_shade(sh: Shade, delta: float) -> void:
+	var goal := _shade_slot_pos(sh)
+	if shadow_lv >= 3:
+		# 自己找主角附近的敵人衝過去（不離開主角太遠）；兩個分身各找不同的敵人
+		var near := _nearest_enemies(SHADE_LEASH, 2, true)
+		if not near.is_empty():
+			var t: Enemy = near[sh.slot % near.size()]
+			goal = t.position - (t.position - sh.node.position).normalized() * (SLASH_RANGE * 0.6)
+		sh.node.position = sh.node.position.move_toward(goal, SHADE_SPEED * delta)
+	else:
+		sh.node.position = sh.node.position.lerp(goal, minf(1.0, delta * 10.0))
+	# 分身是影子：可以穿牆，但不會離主角太遠
+	var off := sh.node.position - player.position
+	if off.length() > SHADE_LEASH:
+		sh.node.position = player.position + off.normalized() * SHADE_LEASH
+
+
+func _shade_attack(sh: Shade, delta: float) -> void:
+	var full := shadow_lv >= 5
+	sh.cd -= delta
+	if sh.cd <= 0.0:
+		var reach := slash_range if full else SLASH_RANGE
+		_push_atk(sh.node.position, 1.0, SHADE_FX_COLOR)
+		var target := _nearest_visible_enemy(reach + 14.0)
+		if target != null:
+			if full:
+				# Lv5：跟本體一模一樣的刀法（範圍、攻速、攻擊力都繼承）
+				sh.cd = SLASH_INTERVAL * attack_mult
+				_slash_at(target)
+			else:
+				# Lv1～4：單純一刀，用基本範圍和基本傷害
+				sh.cd = SLASH_INTERVAL
+				atk_scale = (SHADE_WEAK if shadow_lv < 4 else 1.0) / damage_mult
+				audio.play("slash")
+				var facing := (target.position - atk_from).angle()
+				_hit_sector(atk_from, facing, SLASH_ARC, SLASH_RANGE, true, true)
+				var fx := SlashFx.new().setup(facing, SLASH_ARC, SLASH_RANGE, false)
+				fx.color = SHADE_FX_COLOR
+				fx.position = atk_from
+				fx.z_index = 5
+				add_child(fx)
+		_pop_atk()
+	# Lv5：分身也有自己的斬擊波
+	if full and bullet_lv >= 1:
+		sh.wave_cd -= delta
+		if sh.wave_cd <= 0.0:
+			_push_atk(sh.node.position, 1.0, SHADE_FX_COLOR)
+			if _fire_waves():
+				sh.wave_cd = WAVE_INTERVAL * attack_mult
+			_pop_atk()
+
+
+## 照刀法等級打出一整套斬擊（主角或 Lv5 影分身都用這個，出手位置是 atk_from）
+func _slash_at(target: Enemy) -> void:
 	audio.play("slash")
-	var facing := (target.position - player.position).angle()
+	var facing := (target.position - atk_from).angle()
 	var big := slash_range + COMBO_GROW
 
 	match blade_lv:
@@ -1426,7 +1567,8 @@ func _slash() -> void:
 
 ## 排一個之後才出的連擊。scissor 時 flag = 剪刀合起來（true）或打開（false），否則 flag = 順時針
 func _queue_hit(delay: float, facing: float, reach: float, flag: bool, scissor: bool) -> void:
-	combo.append({"t": delay, "facing": facing, "reach": reach, "flag": flag, "scissor": scissor})
+	combo.append({"t": delay, "facing": facing, "reach": reach, "flag": flag, "scissor": scissor,
+			"from": atk_from, "scale": atk_scale, "color": atk_color})
 
 
 func _update_combo(delta: float) -> void:
@@ -1436,10 +1578,12 @@ func _update_combo(delta: float) -> void:
 		if h.t > 0.0:
 			continue
 		combo.remove_at(i)
+		_push_atk(h["from"], h["scale"], h["color"])
 		if h.scissor:
 			_scissor(h.facing, h.reach, h.flag, false)
 		else:
 			_do_slash(h.facing, SLASH_ARC, h.reach, h.flag, 0.0, false)   # 後續連擊不擊退
+		_pop_atk()
 
 
 ## 雙刀：左右各一把 150° 的刀，中間重疊 30°。
@@ -1454,20 +1598,21 @@ func _scissor(facing: float, reach: float, close: bool, knock := true) -> void:
 ## linger > 0 時斬擊會留在原地，期間每 0.5 秒再打一次（殘影斬）
 ## knock：只有每次攻擊的第一下會擊退，後續連擊和殘影都不擊退
 func _do_slash(facing: float, arc: float, reach: float, clockwise: bool, linger := 0.0, knock := true) -> void:
-	_hit_sector(player.position, facing, arc, reach, true, knock)
+	_hit_sector(atk_from, facing, arc, reach, true, knock)
 
 	# 刀法 Lv3 以上：斬擊範圍內飛來的矢也會被砍掉
 	if blade_lv >= 3:
-		_cut_arrows(player.position, facing, arc, reach)
+		_cut_arrows(atk_from, facing, arc, reach)
 
 	# 特效：「斬」字鋪滿扇形，像刀鋒掃過去；範圍越大字越多
 	var fx := SlashFx.new().setup(facing, arc, reach, clockwise)
 	fx.linger = linger
-	fx.position = player.position
+	fx.color = atk_color
+	fx.position = atk_from
 	fx.z_index = 5
 	add_child(fx)
 	if linger > 0.0:
-		_add_zone(player.position, facing, arc, reach, linger, true, true)
+		_add_zone(atk_from, facing, arc, reach, linger, true, true)
 
 
 ## 把扇形內的矢砍掉（碎開飛走）
@@ -1510,6 +1655,7 @@ func _add_zone(origin: Vector2, facing: float, arc: float, reach: float, life: f
 	z.tick = ZONE_TICK
 	z.check_walls = check_walls
 	z.cuts_arrows = cuts_arrows
+	z.scale = atk_scale
 	zones.append(z)
 
 
@@ -1522,7 +1668,10 @@ func _update_zones(delta: float) -> void:
 			_cut_arrows(z.origin, z.facing, z.arc, z.reach)
 		if z.tick <= 0.0:
 			z.tick += ZONE_TICK
+			var keep := atk_scale
+			atk_scale = z.scale
 			_hit_sector(z.origin, z.facing, z.arc, z.reach, z.check_walls, false)   # 殘影不擊退
+			atk_scale = keep
 		if z.life <= 0.0:
 			zones.remove_at(i)
 
@@ -1538,20 +1687,27 @@ func _update_blade_shots(delta: float) -> void:
 		q.t -= delta
 		if q.t <= 0.0:
 			wave_queue.remove_at(i)
+			_push_atk(q.get("from", player.position), q.get("scale", 1.0), atk_color)
 			_launch_wave(q.angle, true, WAVE_RANGE_LONG, WAVE_SPEED_FAST)
+			_pop_atk()
 
 	if bullet_lv < 1:
 		return
 	wave_cd -= delta
 	if wave_cd > 0.0:
 		return
+	if _fire_waves():
+		wave_cd = WAVE_INTERVAL * attack_mult
+
+
+## 照斬擊波等級射一輪（主角或 Lv5 影分身都用這個，出手位置是 atk_from）。沒有目標就回傳 false
+func _fire_waves() -> bool:
 	var reach := WAVE_RANGE_LONG if bullet_lv >= 4 else WAVE_RANGE
 	var targets := _on_screen_enemies(RIFT_TARGETS) if bullet_lv >= 5 else _nearest_enemies(reach, 4, true)
 	if targets.is_empty():
-		return
-	wave_cd = WAVE_INTERVAL * attack_mult
+		return false
 	var first: Enemy = targets[0]
-	var facing := (first.position - player.position).angle()
+	var facing := (first.position - atk_from).angle()
 	match bullet_lv:
 		1:
 			_launch_wave(facing, false, WAVE_RANGE, WAVE_SPEED)
@@ -1563,10 +1719,12 @@ func _update_blade_shots(delta: float) -> void:
 		4:
 			for k in 4:
 				var t: Enemy = targets[k % targets.size()]
-				wave_queue.append({"t": WAVE_BURST_GAP * k, "angle": (t.position - player.position).angle()})
+				wave_queue.append({"t": WAVE_BURST_GAP * k, "angle": (t.position - atk_from).angle(),
+						"from": atk_from, "scale": atk_scale})
 		_:
 			for t: Enemy in targets:
 				_rift(t.position)
+	return true
 
 
 func _launch_wave(angle: float, big: bool, reach: float, speed: float) -> void:
@@ -1578,7 +1736,8 @@ func _launch_wave(angle: float, big: bool, reach: float, speed: float) -> void:
 	w.speed = speed
 	w.node = WaveFx.new()
 	w.node.font_size = WaveFx.BIG_SIZE if big else WaveFx.FONT_SIZE
-	w.node.position = player.position + w.dir * 20.0
+	w.node.position = atk_from + w.dir * 20.0
+	w.scale = atk_scale
 	w.node.rotation = angle
 	w.node.z_index = 5
 	add_child(w.node)
@@ -1606,7 +1765,7 @@ func _move_waves(delta: float) -> void:
 			var d := e.position - w.node.position
 			if absf(d.dot(w.dir)) <= half_d + e.radius and absf(d.dot(side)) <= half_w + e.radius:
 				w.hits[id] = true
-				_damage_enemy(e, _damage(), w.dir * KNOCK_SLASH)
+				_damage_enemy(e, BASE_DAMAGE * damage_mult * w.scale, w.dir * KNOCK_SLASH)
 				w.pierce -= 1
 				if w.pierce < 0:
 					break
@@ -1640,13 +1799,14 @@ func _on_screen_enemies(count: int) -> Array:
 
 ## 範圍內最近的幾個敵人；need_sight 時中間不能隔牆
 func _nearest_enemies(max_range: float, count: int, need_sight: bool) -> Array:
+	var from := atk_from
 	var near := enemies.filter(func(e: Enemy) -> bool:
-		return e.position.distance_squared_to(player.position) < max_range * max_range)
+		return e.position.distance_squared_to(from) < max_range * max_range)
 	near.sort_custom(func(a: Enemy, b: Enemy) -> bool:
-		return a.position.distance_squared_to(player.position) < b.position.distance_squared_to(player.position))
+		return a.position.distance_squared_to(from) < b.position.distance_squared_to(from))
 	var out := []
 	for e: Enemy in near:
-		if not need_sight or _line_clear(player.position, e.position):
+		if not need_sight or _line_clear(from, e.position):
 			out.append(e)
 			if out.size() >= count:
 				break
@@ -1811,12 +1971,13 @@ func _update_effects(delta: float) -> void:
 
 ## 找最近、在範圍內、而且中間沒有牆擋住的敵人
 func _nearest_visible_enemy(max_range: float) -> Enemy:
+	var from := atk_from
 	var sorted := enemies.filter(func(e: Enemy) -> bool:
-		return e.position.distance_squared_to(player.position) < max_range * max_range)
+		return e.position.distance_squared_to(from) < max_range * max_range)
 	sorted.sort_custom(func(a: Enemy, b: Enemy) -> bool:
-		return a.position.distance_squared_to(player.position) < b.position.distance_squared_to(player.position))
+		return a.position.distance_squared_to(from) < b.position.distance_squared_to(from))
 	for e: Enemy in sorted:
-		if _line_clear(player.position, e.position):
+		if _line_clear(from, e.position):
 			return e
 	return null
 
@@ -2037,12 +2198,13 @@ func _line_level(line: String) -> int:
 		"彈": return bullet_lv
 		"刀": return blade_lv
 		"砲": return cannon_lv
+		"影": return shadow_lv
 	return 0
 
 
 ## 這個角色有哪幾條強化線
 func _lines() -> Array:
-	return ["彈", "刀"] if _is_blade() else ["彈", "刀", "砲"]
+	return ["彈", "刀", "影"] if _is_blade() else ["彈", "刀", "砲"]
 
 
 func _show_power_up() -> void:
@@ -2071,6 +2233,7 @@ func _process_power_up() -> void:
 			"彈": bullet_lv += 1
 			"刀": blade_lv += 1
 			"砲": cannon_lv += 1
+			"影": shadow_lv += 1
 		level_cards.visible = false
 		state = State.PLAYING
 		_update_hud()

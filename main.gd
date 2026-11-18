@@ -233,6 +233,7 @@ const WAVE_BURST_GAP := 0.07        # Lv4：四連發之間的間隔
 const RIFT_TARGETS := 4             # Lv5 空間斬擊：鎖定畫面內最近的幾個敵人
 const RIFT_RADIUS := 40.0           # 空間斬擊的半徑
 const RIFT_TIME := 0.5              # 空間斬擊停留幾秒
+const RIFT_REACH_BONUS := 0.15        # 「廣」每級讓空間斬擊的直徑 +15%
 const COLOR_RIFT := Color(0.8, 0.6, 1.0)
 
 ## 卡片上的名稱與說明：[角色][線] -> 名稱、各級說明（index = 升到第幾級）
@@ -283,7 +284,7 @@ const UPGRADES := [
 	{"id": "power",  "icon": "力", "name": "攻擊力",   "desc": "傷害 +20%", "who": "all"},
 	{"id": "haste",  "icon": "疾", "name": "攻擊速度", "desc": "攻擊速度 +15%", "who": "all"},
 	{"id": "pierce", "icon": "穿", "name": "穿透",     "desc": "子彈多穿過\n1 個敵人；\n砲傷害 +25%", "who": "人"},
-	{"id": "reach",  "icon": "廣", "name": "斬擊範圍", "desc": "斬擊距離 +20%；\n斬擊波多穿過\n1 個敵人", "who": "刀"},
+	{"id": "reach",  "icon": "廣", "name": "斬擊範圍", "desc": "斬擊距離 +20%；\n斬擊波多穿過\n1 個敵人；\n空間斬擊 +15%", "who": "刀"},
 	{"id": "speed",  "icon": "速", "name": "移動速度", "desc": "移動速度 +12%", "who": "all"},
 	{"id": "vital",  "icon": "體", "name": "體魄",     "desc": "每秒回 0.1 血", "who": "all"},
 	{"id": "magnet", "icon": "磁", "name": "吸金",     "desc": "吸金範圍 +35%", "who": "all"},
@@ -2234,13 +2235,15 @@ func _move_waves(delta: float) -> void:
 ## 空間斬擊：在敵人身上直接出現一圈斬擊打一次（無視牆），之後留 0.5 秒殘影但不再造成傷害
 func _rift(pos: Vector2) -> void:
 	audio.play("wave")
-	var fx := SlashFx.new().setup(randf() * TAU, TAU, RIFT_RADIUS, false)
+	# 「廣」每級讓空間斬擊的圈圈直徑 +15%
+	var r := RIFT_RADIUS * (1.0 + RIFT_REACH_BONUS * int(upgrade_levels.get("reach", 0)))
+	var fx := SlashFx.new().setup(randf() * TAU, TAU, r, false)
 	fx.linger = RIFT_TIME
 	fx.color = COLOR_RIFT
 	fx.position = pos
 	fx.z_index = 5
 	add_child(fx)
-	_hit_sector(pos, 0.0, TAU, RIFT_RADIUS, false)   # 只在出現時打一次，殘影只是畫面
+	_hit_sector(pos, 0.0, TAU, r, false)   # 只在出現時打一次，殘影只是畫面
 
 
 ## 畫面內最近的幾個敵人（空間斬擊不管牆）

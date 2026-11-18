@@ -1936,7 +1936,7 @@ func _update_hearts() -> void:
 			_spawn_heart()
 	for i in range(hearts.size() - 1, -1, -1):
 		var h := hearts[i]
-		if h.position.distance_to(player.position) < HEAL_PICK_RANGE:
+		if hp < max_hp and h.position.distance_to(player.position) < HEAL_PICK_RANGE:   # 滿血時不撿，留著之後用
 			hp = mini(hp + HEAL_AMOUNT, max_hp)
 			audio.play("heal")
 			var p := particles.add("+%d" % HEAL_AMOUNT, h.position + Vector2(0, -20), Vector2(0, -60), 0.7, 33, HeartPickup.COLOR)

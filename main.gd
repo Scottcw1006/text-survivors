@@ -705,7 +705,7 @@ func _show_select() -> void:
 
 ## 難度：hp = 怪物血量倍率、count = 怪物數量倍率、speed = 移動速度倍率、banned = 不會出現的怪
 const DIFFICULTIES := [
-	{"name": "簡單", "hp": 0.5, "count": 0.5, "speed": 0.7, "banned": ["鳥", "冑", "弩", "魂", "鬼", "牛", "犇"],
+	{"name": "簡單", "hp": 0.5, "count": 0.5, "speed": 0.7, "banned": ["鳥", "冑", "弩", "魂", "鬼", "犇"],
 		"desc": "怪物血量、數量減半，速度 70%，不會出現進階怪物"},
 	{"name": "普通", "hp": 1.0, "count": 1.0, "speed": 1.0, "banned": [],
 		"desc": "標準難度"},

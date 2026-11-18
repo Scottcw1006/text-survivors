@@ -14,6 +14,9 @@ const BULLET_DAMAGE := 8.0          # 人的子彈基礎傷害
 # ---------- 牛、犇 ----------
 const CHARGE_RANGE := 300.0           # 多近開始蓄力（約 8 格）
 const CHARGE_WINDUP := 0.8            # 蓄力幾秒
+const STOMP_TIMES := [0.3, 0.65]      # 蓄力中第幾成的時候踩下去（踩兩下）
+const STOMP_LEN := 0.18               # 每一下抬腳佔蓄力時間的比例
+const STOMP_HEIGHT := 10.0            # 抬多高
 const CHARGE_SPEED := 620.0           # 衝刺速度
 const CHARGE_OVERSHOOT := 40.0        # 衝到目標點後再多衝一點
 const CHARGE_REST := 0.5              # 衝完喘幾秒
@@ -1244,8 +1247,20 @@ func _charge_step(e: Enemy, vel: Vector2, to_player: Vector2, delta: float) -> V
 				e.queue_redraw()
 			return vel
 		1:
+			var before := e.charge_t
 			e.charge_t -= delta
-			e.offset = Vector2(randf_range(-2, 2), randf_range(-2, 2))   # 蓄力抖動
+			# 像鬥牛：原地踩兩下（抬起來、重重踩下），然後才衝
+			var k := 1.0 - e.charge_t / CHARGE_WINDUP   # 0 → 1
+			var hop := 0.0
+			for st in STOMP_TIMES:
+				var d: float = (k - st) / STOMP_LEN
+				if d > -1.0 and d < 0.0:
+					hop = maxf(hop, sin((d + 1.0) * PI))   # 抬腳
+			e.offset = Vector2(0, -STOMP_HEIGHT * hop)
+			for st in STOMP_TIMES:
+				var t_hit: float = CHARGE_WINDUP * (1.0 - st)
+				if before > t_hit and e.charge_t <= t_hit:
+					_stomp_dust(e)
 			e.queue_redraw()
 			if e.charge_t <= 0.0:
 				e.charge_state = 2
@@ -1269,6 +1284,17 @@ func _charge_step(e: Enemy, vel: Vector2, to_player: Vector2, delta: float) -> V
 				e.charge_state = 0
 				e.charge_cd = CHARGE_COOLDOWN
 			return Vector2.ZERO
+
+
+## 踩地：腳邊往後噴一點塵土
+func _stomp_dust(e: Enemy) -> void:
+	var back := (e.position - e.charge_target).normalized()
+	for i in 4:
+		var dir := back.rotated(randf_range(-0.8, 0.8))
+		var p := particles.add("．", e.position + Vector2(0, e.radius * 0.6), dir * randf_range(60, 120),
+				0.35, 22, Color(0.7, 0.6, 0.5))
+		p.drag = 3.0
+	_shake(1.5)
 
 
 func _end_charge(e: Enemy) -> void:

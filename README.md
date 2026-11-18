@@ -74,6 +74,7 @@
 ## 檔案
 
 - `main.gd`：選角、一局的流程、生成、攻擊、金、HUD；最上面的常數就是平衡參數
+- `build_web.sh`：匯出網頁版（帶版本號）；`version.gd` 由它自動產生
 - `touch_controls.gd`：手機觸控（虛擬搖桿、技／天按鍵、點卡片）
 - `glyph.gd`：把一個字畫在畫面上（人、敵、子彈都是它）
 - `cards.gd`：卡片畫面（選角、升級共用），用「框」字圍起來
@@ -88,11 +89,13 @@
 
 線上玩：https://scottcw1006.github.io/text-survivors/ （電腦用鍵盤滑鼠；手機橫拿，選角時操作模式選「手機」）
 
-更新網頁版：改完程式後重新匯出，再 commit、push，GitHub Pages 會自動更新
+更新網頁版：改完程式後執行 `build_web.sh` 重新匯出，再 commit、push，GitHub Pages 會自動更新
 
 ```bash
-godot --headless --export-release "Web" docs/index.html
+./build_web.sh
 ```
 
+- 每次匯出的檔案名稱都帶版本號（`docs/game_<日期-時間>.*`），瀏覽器不會拿到快取的舊版；`docs/` 只保留最新兩版
+- 版本號會寫進 `version.gd`，選角畫面右下角會顯示（例如 v2026.11.18-1241）
 - 匯出設定在 `export_presets.cfg`（Web、不開多執行緒，GitHub Pages 不用額外設定就能跑）
 - 需要先安裝 Godot 4.7.2 的網頁匯出模板（放在 `~/Library/Application Support/Godot/export_templates/4.7.2.stable/`）

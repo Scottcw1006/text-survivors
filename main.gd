@@ -213,8 +213,9 @@ const UPGRADES := [
 ]
 
 const CHARACTERS := [
-	{"glyph": "人", "name": "遠程射擊", "desc": "自動射向最近的敵人\nShift：往前衝刺六格，過程與結束後 1 秒無敵"},
-	{"glyph": "刀", "name": "近身斬擊", "desc": "扇形揮砍，一次砍多個\nShift：跳五格，落地震殺周圍敵人"},
+	# 說明：卡片一行大約 8 個中文字，自己用 \n 斷行，才不會斷在奇怪的地方
+	{"glyph": "人", "name": "遠程射擊", "desc": "自動射向最近敵人\nShift：衝刺六格\n衝刺中與結束後\n1 秒無敵"},
+	{"glyph": "刀", "name": "近身斬擊", "desc": "扇形揮砍\n一次砍多個\nShift：跳五格\n落地震殺周圍敵人"},
 ]
 
 enum State { SELECT, PLAYING, LEVEL_UP, DEAD, WON, POWER_UP, PAUSED }
@@ -365,6 +366,7 @@ var hud_key_smite: Label            # 「天」下面的操作鍵說明
 var hud_power: Label
 var hud_time: Label
 var hud_boss: Label                 # 決戰時上方的最終王血條
+var hud_version: Label              # 選角畫面右下角的版本號
 var hud_final_hint: Label           # 決戰開始時畫面中上方的「打倒全部最終王！」
 var final_hint_time := 0.0          # 提示還要顯示幾秒
 var hud_kills: Label
@@ -560,6 +562,7 @@ func _process_select() -> void:
 		else:
 			blade_lv = 0    # 人一開始沒有迴旋刃，第一次拿「刀」就是迴旋刃 Lv1
 		level_cards.visible = false
+		hud_version.visible = false
 		state = State.PLAYING
 
 
@@ -598,18 +601,18 @@ func set_difficulty(i: int) -> void:
 
 ## 選角畫面下面的操作教學（手機版）
 const TUTORIAL_TIPS_TOUCH := [
-	{"name": "移動", "key": "拖曳螢幕", "desc": "手指按住往哪拖就往哪走，攻擊全自動"},
-	{"name": "技能", "key": "右下「技」", "desc": "人衝刺、刀跳躍，都會無敵。存兩次，5 秒回一次"},
-	{"name": "天罰", "key": "右下「天」", "desc": "一局只能用一次，清空全地圖的小兵"},
-	{"name": "選卡片", "key": "點卡片", "desc": "點一下選擇，再點一次選好的卡片確定"},
+	{"name": "移動", "key": "拖曳螢幕", "desc": "手指按住往哪拖\n就往哪走，\n攻擊全自動"},
+	{"name": "技能", "key": "右下「技」", "desc": "人衝刺、刀跳躍，\n都會無敵。\n存兩次，5 秒回一次"},
+	{"name": "天罰", "key": "右下「天」", "desc": "一局只能用一次，\n清空全地圖的小兵"},
+	{"name": "選卡片", "key": "點卡片", "desc": "點一下選擇，\n再點一次選好的\n卡片確定"},
 ]
 
 ## 選角畫面下面的操作教學
 const TUTORIAL_TIPS := [
-	{"name": "移動", "key": "WASD / ↑↓←→", "desc": "攻擊全自動，只要專心走位、撿「金」升級"},
-	{"name": "技能", "key": "Shift", "desc": "人衝刺、刀跳躍，都會無敵。存兩次，5 秒回一次"},
-	{"name": "天罰", "key": "滑鼠左鍵", "desc": "一局只能用一次，清空全地圖的小兵"},
-	{"name": "選卡片", "key": "A D / ←→", "desc": "升級、開寶箱時左右選，按 Space 或 Enter 確定"},
+	{"name": "移動", "key": "WASD / ↑↓←→", "desc": "攻擊全自動，\n只要專心走位、\n撿「金」升級"},
+	{"name": "技能", "key": "Shift", "desc": "人衝刺、刀跳躍，\n都會無敵。\n存兩次，5 秒回一次"},
+	{"name": "天罰", "key": "滑鼠左鍵", "desc": "一局只能用一次，\n清空全地圖的小兵"},
+	{"name": "選卡片", "key": "A D / ←→", "desc": "升級、開寶箱時\n左右選，\n按 Space / Enter 確定"},
 ]
 
 
@@ -2138,6 +2141,16 @@ func _build_hud() -> void:
 	hud_final_hint.visible = false
 	root.add_child(hud_final_hint)
 
+	hud_version = Label.new()
+	hud_version.text = preload("res://version.gd").TEXT
+	hud_version.add_theme_font_size_override("font_size", 22)
+	hud_version.modulate.a = 0.5
+	hud_version.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	hud_version.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	hud_version.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	hud_version.position += Vector2(-16, -12)
+	root.add_child(hud_version)
+
 	hud_kills = Label.new()
 	hud_kills.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	hud_kills.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -2185,6 +2198,7 @@ func _build_hud() -> void:
 	level_cards.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	level_cards.visible = false
 	root.add_child(level_cards)
+	root.move_child(hud_version, -1)   # 版本號要蓋在卡片畫面上面才看得到
 
 	# 手機模式直拿時畫面太小：蓋一層提示請轉橫（放最上面，連卡片都蓋住）
 	rotate_hint = ColorRect.new()

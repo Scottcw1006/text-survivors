@@ -375,6 +375,7 @@ var menu: Control                  # 選角 / 升級 / 結束畫面共用
 var menu_label: Label
 var level_cards: UpgradeCards       # 升級卡片畫面
 var touch: TouchControls            # 手機觸控（虛擬搖桿、技/天按鍵）
+var audio: GameAudio                # 音樂與音效
 var is_touch := false               # 有觸控螢幕就開手機操作
 var rotate_hint: ColorRect          # 手機直拿時的「請轉橫」提示
 var final_frame: Control            # 決戰時整個畫面外圍的一圈紅色「戰」
@@ -383,6 +384,10 @@ var final_frame: Control            # 決戰時整個畫面外圍的一圈紅色
 func _ready() -> void:
 	font = _load_pixel_font()
 	Glyph.font = font
+
+	audio = GameAudio.new()
+	add_child(audio)
+	audio.play_music("main")
 
 	terrain = Terrain.new()
 	terrain.font = font
@@ -426,6 +431,8 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_update_feedback(delta)
+	if Input.is_action_just_pressed("mute"):
+		toggle_mute()
 	match state:
 		State.SELECT:
 			_process_select()
@@ -522,6 +529,7 @@ func _setup_input() -> void:
 		"confirm": [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER],  # 選單確定：Space 左手就按得到，Enter 也可以
 		"toggle_mode": [KEY_TAB],    # 選角畫面切換手機／電腦操作
 		"pause": [KEY_ESCAPE],       # 遊戲中暫停／繼續
+		"mute": [KEY_M],             # 靜音／取消靜音（任何時候都可以）
 	}
 	for action: String in keys:
 		if InputMap.has_action(action):
@@ -553,10 +561,12 @@ func _process_select() -> void:
 	elif Input.is_action_just_pressed("move_right"):
 		step = 1
 	if step != 0:
+		audio.play("ui_move")
 		character = posmod(character + step, CHARACTERS.size())
 		player.set_text(CHARACTERS[character].glyph)
 		_show_select()
 	if Input.is_action_just_pressed("confirm"):
+		audio.play("ui_ok")
 		last_character = character
 		if _is_blade():
 			bullet_lv = 0   # 刀一開始沒有斬擊波，第一次拿「彈」就是斬擊波 Lv1
@@ -568,6 +578,9 @@ func _process_select() -> void:
 
 
 func _show_select() -> void:
+	if hud_version != null:
+		var ver: String = preload("res://version.gd").TEXT
+		hud_version.text = ver if is_touch else "M 靜音　" + ver
 	var cards := []
 	for c: Dictionary in CHARACTERS:
 		var desc: String = c.desc.replace("Shift", "技") if is_touch else c.desc
@@ -596,7 +609,10 @@ const DIFFICULTIES := [
 
 
 func set_difficulty(i: int) -> void:
-	difficulty = clampi(i, 0, DIFFICULTIES.size() - 1)
+	var d := clampi(i, 0, DIFFICULTIES.size() - 1)
+	if d != difficulty:
+		audio.play("ui_move")
+	difficulty = d
 	_show_select()
 
 
@@ -625,6 +641,7 @@ func _check_orientation() -> void:
 ## 暫停／繼續：整個遊戲停住（連飛散的字、斬擊特效也停），畫面蓋一層「暫停」
 func _set_paused(on: bool) -> void:
 	state = State.PAUSED if on else State.PLAYING
+	audio.play("pause")
 	for child in get_children():
 		if child is TextParticles or child is SlashFx:
 			child.process_mode = Node.PROCESS_MODE_DISABLED if on else Node.PROCESS_MODE_INHERIT
@@ -633,6 +650,13 @@ func _set_paused(on: bool) -> void:
 		menu_label.add_theme_font_size_override("font_size", 44)
 	else:
 		menu.visible = false
+	if touch != null:
+		touch.refresh()
+
+
+## 靜音切換（M 鍵、手機的「音」按鍵）
+func toggle_mute() -> void:
+	GameAudio.toggle_mute()
 	if touch != null:
 		touch.refresh()
 
@@ -683,6 +707,7 @@ func is_playing() -> bool:
 
 ## 手機點了第 i 張卡片（還沒確定，只是選它）
 func touch_select(i: int) -> void:
+	audio.play("ui_move")
 	match state:
 		State.SELECT:
 			character = i
@@ -742,6 +767,7 @@ func _player_vulnerable() -> bool:
 func _hurt_player(amount: int) -> void:
 	if not _player_vulnerable():
 		return
+	audio.play("hurt")
 	hp -= amount
 	invincible = INVINCIBLE_TIME
 	_shake(10.0)
@@ -793,6 +819,7 @@ func _start_skill() -> void:
 	skill_time = skill_duration
 	invincible = 0.0
 	player.modulate.a = 1.0
+	audio.play("jump" if _is_blade() else "dash")
 
 
 func _step_skill(delta: float) -> void:
@@ -823,6 +850,7 @@ func _step_skill(delta: float) -> void:
 
 ## 刀落地：三格內的敵人瞬殺（王只吃重傷害）
 func _land() -> void:
+	audio.play("land")
 	land_grace = LAND_GRACE
 	for e: Enemy in enemies.duplicate():
 		if e.position.distance_to(player.position) > JUMP_LAND_RANGE + e.radius:
@@ -850,6 +878,8 @@ func _is_blade() -> bool:
 ## 三分鐘到：出現最終王（兩隻王、一隻大弓），打倒全部才算贏；之後不再掉金、不再出寶箱
 func _start_final_phase() -> void:
 	final_phase = true
+	audio.play("final")
+	audio.play_music("final")
 	for i in FINAL_BOSSES.size():
 		var pos := _find_spawn_point()
 		if pos == Vector2.INF:
@@ -883,6 +913,7 @@ func _spawn_enemies(delta: float) -> void:
 		var bp := _find_spawn_point()
 		if bp != Vector2.INF:
 			_spawn_enemy("王", bp)
+			audio.play("boss")
 
 	spawn_cd -= delta
 	if spawn_cd > 0.0:
@@ -1047,6 +1078,7 @@ func _damage() -> float:
 func _damage_enemy(e: Enemy, amount: float, knock := Vector2.ZERO) -> void:
 	if _block_hit(e):
 		return
+	audio.play("hit")
 	var boss := e.is_boss
 	var num := particles.add(str(int(round(amount))),
 			e.position + Vector2(randf_range(-8, 8), -e.radius - 6.0),
@@ -1061,6 +1093,7 @@ func _damage_enemy(e: Enemy, amount: float, knock := Vector2.ZERO) -> void:
 func _block_hit(e: Enemy) -> bool:
 	if not e.block_hit():
 		return false
+	audio.play("block")
 	var p := particles.add("無效", e.position + Vector2(0, -e.radius - 6.0),
 			Vector2(randf_range(-20, 20), -60), 0.45, 22, e.base_color)
 	p.drag = 2.0
@@ -1088,6 +1121,7 @@ func _kill_enemy(e: Enemy) -> void:
 		return
 	enemies.erase(e)
 	final_bosses.erase(e)   # 決戰的王死了就從清單拿掉
+	audio.play("explode" if e.is_boss else "kill")
 	var cell: Array = grid.get(_cell(e.position), [])
 	cell.erase(e)
 	_shatter(e)
@@ -1126,6 +1160,7 @@ func _fire() -> void:
 	if target == null:
 		return
 	attack_cd = FIRE_INTERVAL * attack_mult
+	audio.play("shoot")
 	var dir := (target.position - player.position).normalized()
 	var muzzle := player.position + dir * MUZZLE_DIST
 	# 開槍動畫：主角往後一縮，槍口冒出「砰」
@@ -1181,6 +1216,7 @@ func _slash() -> void:
 	if target == null:
 		return
 	attack_cd = SLASH_INTERVAL * attack_mult
+	audio.play("slash")
 	var facing := (target.position - player.position).angle()
 	var big := slash_range + COMBO_GROW
 
@@ -1350,6 +1386,7 @@ func _update_blade_shots(delta: float) -> void:
 
 
 func _launch_wave(angle: float, big: bool, reach: float, speed: float) -> void:
+	audio.play("wave")
 	var w := Wave.new()
 	w.dir = Vector2.from_angle(angle)
 	w.big = big
@@ -1396,6 +1433,7 @@ func _move_waves(delta: float) -> void:
 
 ## 空間斬擊：在敵人身上直接出現一圈斬擊打一次（無視牆），之後留 0.5 秒殘影但不再造成傷害
 func _rift(pos: Vector2) -> void:
+	audio.play("wave")
 	var fx := SlashFx.new().setup(randf() * TAU, TAU, RIFT_RADIUS, false)
 	fx.linger = RIFT_TIME
 	fx.color = COLOR_RIFT
@@ -1500,6 +1538,7 @@ func _outer_radius() -> float:
 
 ## 爆旋：以主角為中心，半徑內的敵人全部吃一次爆炸傷害，外圈冒出一圈「爆」；Lv5 接著把刃射出去
 func _orbit_burst(r: float) -> void:
+	audio.play("explode")
 	for e: Enemy in _nearby_radius(player.position, r + 30.0):
 		var to := e.position - player.position
 		if to.length() <= r + e.radius:
@@ -1624,6 +1663,7 @@ func _update_gold(delta: float) -> void:
 		if dist > pickup_range:
 			continue
 		if dist < PLAYER_RADIUS:
+			audio.play("gold")
 			gold += 1
 			_gain_xp(1)
 			g.queue_free()
@@ -1643,6 +1683,7 @@ func _update_smite(_delta: float) -> void:
 
 
 func _smite_all() -> void:
+	audio.play("smite")
 	for e: Enemy in enemies.duplicate():
 		if e.is_boss:
 			_damage_enemy(e, _damage() * BOSS_LAND_MULT)
@@ -1735,6 +1776,7 @@ func _place_chest(pos: Vector2) -> void:
 
 ## 打開寶箱：排一次「彈 / 刀」二選一
 func _open_chest(c: Chest) -> void:
+	audio.play("chest")
 	pending_power += 1
 	var pop := particles.add("寶", c.node.position, Vector2.ZERO, 0.3, GLYPH_SIZE, COLOR_CHEST)
 	pop.grow = 3.0
@@ -1783,9 +1825,11 @@ func _process_power_up() -> void:
 	elif Input.is_action_just_pressed("move_right"):
 		step = 1
 	if step != 0:
+		audio.play("ui_move")
 		power_cursor = posmod(power_cursor + step, power_choices.size())
 		_show_power_up()
 	if Input.is_action_just_pressed("confirm"):
+		audio.play("ui_ok")
 		if power_choices[power_cursor] == "彈":
 			bullet_lv += 1
 		else:
@@ -1938,6 +1982,7 @@ func _open_level_up() -> void:
 		return
 	pool.shuffle()
 	upgrade_choices = pool.slice(0, 3)
+	audio.play("level")
 	upgrade_cursor = 0
 	state = State.LEVEL_UP
 	player.modulate.a = 1.0
@@ -1959,9 +2004,11 @@ func _process_level_up() -> void:
 	elif Input.is_action_just_pressed("move_right"):
 		step = 1
 	if step != 0:
+		audio.play("ui_move")
 		upgrade_cursor = posmod(upgrade_cursor + step, upgrade_choices.size())
 		_show_level_up()
 	if Input.is_action_just_pressed("confirm"):
+		audio.play("ui_ok")
 		_apply_upgrade(upgrade_choices[upgrade_cursor].id)
 		level_cards.visible = false
 		state = State.PLAYING
@@ -2260,6 +2307,8 @@ func _update_hud() -> void:
 
 func _end(result: State) -> void:
 	state = result
+	audio.stop_music()
+	audio.play("lose" if result == State.DEAD else "win")
 	_update_hud()
 	player.modulate.a = 1.0
 	var title := "你擊敗了最終王！"

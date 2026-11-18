@@ -2,7 +2,7 @@ class_name TouchControls
 extends Control
 ## 手機觸控操作（選角時選「手機」模式才有虛擬搖桿和按鍵）：
 ## - 遊戲中：手指在螢幕上拖曳 = 虛擬搖桿（從按下的地方開始算方向）
-## - 右下角兩顆虛擬按鍵：「技」= Shift，「天」= 滑鼠左鍵；右上角「停」= Esc 暫停
+## - 右下角兩顆虛擬按鍵：「技」= Shift，「天」= 滑鼠左鍵；右上角「停」= Esc 暫停、「音」= M 靜音
 ## - 選單：點卡片選它，再點一次已選的卡片 = 確定；結算畫面點「再來一局」按鈕
 ##   （選單用滑鼠點也可以，電腦模式也能用）
 ## 按鍵都是送出 InputEventAction，所以遊戲邏輯跟鍵盤共用同一套。
@@ -33,6 +33,10 @@ func skill_center() -> Vector2:
 
 func pause_center() -> Vector2:
 	return Vector2(size.x - 60.0, 150.0)
+
+
+func mute_center() -> Vector2:
+	return Vector2(size.x - 60.0, 230.0)
 
 
 func smite_center() -> Vector2:
@@ -74,6 +78,8 @@ func _touch_down(finger: int, pos: Vector2) -> void:
 	if main.is_touch:
 		if pos.distance_to(pause_center()) < PAUSE_RADIUS * 1.4:
 			_press(finger, "pause")
+		elif pos.distance_to(mute_center()) < PAUSE_RADIUS * 1.4:
+			main.toggle_mute()
 		elif pos.distance_to(skill_center()) < SKILL_RADIUS * 1.2:
 			_press(finger, "skill")
 		elif pos.distance_to(smite_center()) < SMITE_RADIUS * 1.2:
@@ -173,6 +179,8 @@ func _draw() -> void:
 	_button(smite_center(), SMITE_RADIUS, "天", not main.smite_used, "smite")
 	# 停：暫停（手機沒有 Esc）
 	_button(pause_center(), PAUSE_RADIUS, "停", true, "pause", 33)
+	# 音：靜音開關（靜音時變暗）
+	_button(mute_center(), PAUSE_RADIUS, "音", not GameAudio.is_muted(), "mute", 33)
 
 
 func _button(center: Vector2, r: float, glyph: String, on: bool, action: String, glyph_size := 44) -> void:

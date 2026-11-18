@@ -113,6 +113,17 @@ def tone(f0, length, kind="square", duty=0.5, f1=None, vib=0.0, attack=0.003, re
             s = square(phase, duty)
         elif kind == "tri":
             s = triangle(phase)
+        elif kind == "pluck" or kind == "bell":
+            # 撥弦／木琴感：正弦加一點泛音，音量指數衰減（乾淨、不刺耳）
+            w = phase * 2 * math.pi
+            if kind == "pluck":
+                s = math.sin(w) + 0.25 * math.sin(2 * w) * math.exp(-t * 8) + 0.08 * math.sin(3 * w) * math.exp(-t * 14)
+            else:
+                s = math.sin(w) + 0.3 * math.sin(2.76 * w) * math.exp(-t * 6)
+            decay = math.exp(-t / max(0.05, length * 0.35))
+            s *= decay * min(1.0, t / 0.004) * min(1.0, (length - t) / 0.01)
+            out.append(s * 0.8)
+            continue
         else:
             s = math.sin(phase * 2 * math.pi)
         out.append(s * env(t, length, attack, release))
@@ -146,107 +157,131 @@ def hat(length=0.03):
 
 
 # ---------- 音樂 ----------
+# 風格：Lo-fi，悠閒、乾淨。七和弦鋪底＋撥弦低音＋搖擺的輕鼓＋鐘聲主旋律。
 
-def song(bpm, bars, chords, lead_fn, bass_fn, drum_fn, seed):
-    """chords：每兩小節一個和弦（MIDI 根音、是否小調），整首重複到 bars 小節"""
-    beat = 60.0 / bpm
-    eighth = beat / 2
+
+def pad(notes, length, vol=1.0):
+    """和弦鋪底：幾個正弦音慢慢淡入淡出，稍微錯開音高讓聲音比較寬"""
+    total = int(length * RATE)
+    out = [0.0] * total
+    for k, note in enumerate(notes):
+        for det in (-0.0015, 0.0015):
+            f = freq(note) * (1 + det)
+            ph = k * 0.37
+            for i in range(total):
+                t = i / RATE
+                a = min(1.0, t / 0.35) * min(1.0, (length - t) / 0.45)
+                ph += f / RATE
+                out[i] += math.sin(ph * 2 * math.pi) * a * vol / (len(notes) * 2)
+    return out
+
+
+def soft_kick(length=0.22):
+    return [s * 0.9 for s in tone(95, length, "sine", f1=45)]
+
+
+def echo(buf, delay, feedback=0.3, mix=0.35):
+    """回音：讓撥弦旋律有空間感"""
+    d = int(delay * RATE)
+    out = buf[:]
+    for i in range(d, len(out)):
+        out[i] += out[i - d] * feedback
+    return [a * (1 - mix) + b * mix for a, b in zip(buf, out)]
+
+
+def mix_wrap(buf, start, samples, vol=1.0):
+    """跟 mix_into 一樣，但超出結尾的部分繞回開頭（循環播放時接縫才不會斷掉）"""
+    total = len(buf)
+    for i, x in enumerate(samples):
+        buf[(start + i) % total] += x * vol
+
+
+def brush(length=0.18):
+    """刷子小鼓：很悶的雜訊"""
+    return noise(length, 1, 21, 2.0, 0.12)
+
+
+def lofi(bpm, chords, melody, busy=False):
+    """Lo-fi：七和弦鋪底、撥弦低音、搖擺節奏的輕鼓、鐘聲主旋律加回音。
+    chords：每小節一個和弦（MIDI 音高列表，第一個是低音）
+    melody：每小節一串 (音名, 第幾拍開始, 長幾拍)
+    busy：決戰用，鼓和低音比較密"""
+    beat = 60 / bpm
+    swing = beat * 0.62   # 搖擺：第二個 8 分音符晚一點
+    bars = 16
     total = int(bars * 4 * beat * RATE)
     buf = [0.0] * total
-    rng = random.Random(seed)
+    lead = [0.0] * total
+
+    def at(t):
+        return int(t * RATE)
+
     for bar in range(bars):
-        root, minor = chords[(bar // 2) % len(chords)]
-        bar_start = bar * 4 * beat
-        lead_fn(buf, bar, bar_start, eighth, root, minor, rng)
-        bass_fn(buf, bar, bar_start, eighth, root)
-        drum_fn(buf, bar, bar_start, eighth)
-    return buf
-
-
-def chord_tones(root, minor):
-    third = 3 if minor else 4
-    return [root, root + third, root + 7]
+        ch = chords[bar % len(chords)]
+        s0 = bar * 4 * beat
+        mix_wrap(buf, at(s0), pad([k + 12 for k in ch], 4 * beat), 0.3)
+        low = ch[0] - 12
+        if busy:
+            # 低音：每拍都有，第四拍後半帶一個五度
+            for b in range(4):
+                mix_wrap(buf, at(s0 + b * beat), tone(freq(low), beat * 0.9, "pluck"), 0.42)
+            mix_wrap(buf, at(s0 + 3 * beat + swing), tone(freq(low + 7), beat * 0.5, "pluck"), 0.3)
+        else:
+            mix_wrap(buf, at(s0), tone(freq(low), beat * 1.5, "pluck"), 0.5)
+            mix_wrap(buf, at(s0 + 2.5 * beat), tone(freq(low + 7), beat, "pluck"), 0.35)
+        # 鼓：大鼓、刷子小鼓 2、4，很輕的沙鈴
+        for b in ((0, 1, 2) if busy else (0, 2)):
+            mix_wrap(buf, at(s0 + b * beat), soft_kick(), 0.4 if b != 1 else 0.25)
+        mix_wrap(buf, at(s0 + 2 * beat + swing), soft_kick(), 0.2)
+        for b in (1, 3):
+            mix_wrap(buf, at(s0 + b * beat), brush(), 0.2 if busy else 0.18)
+        for b in range(4):
+            offs = (0, swing / 2, swing, swing + (beat - swing) / 2) if busy else (0, swing)
+            for off in offs:
+                mix_wrap(buf, at(s0 + b * beat + off), noise(0.03, 1, 5, 2.0, 0.35), 0.035)
+        for name, start, length in melody[bar % len(melody)]:
+            mix_wrap(lead, at(s0 + start * beat), tone(freq(n(name)), beat * (length + 0.5), "bell"), 0.22)
+    lead = echo(lead, beat * 0.75, 0.3, 0.3)
+    return [a + b for a, b in zip(buf, lead)]
 
 
 def make_main():
-    """一般關卡：A 小調，140 BPM，Am - F - C - G"""
-    chords = [(n("A3"), True), (n("F3"), False), (n("C4"), False), (n("G3"), False)]
-    # 八小節的旋律動機（每拍一個 8 分音符位置：音程相對和弦根音，None = 休止）
-    motifs = [
-        [12, None, 15, 19, 17, 15, 12, None],
-        [19, None, 17, 15, 12, None, 10, 12],
-        [12, 12, 15, None, 19, 22, 19, 17],
-        [15, None, 12, None, 10, 12, None, None],
+    """一般關卡：Lo-fi，Dm7 - G7 - Cmaj7 - Am7，78 BPM"""
+    chords = [[n("D3"), n("F3"), n("A3"), n("C4")], [n("G2"), n("F3"), n("B3"), n("D4")],
+              [n("C3"), n("E3"), n("G3"), n("B3")], [n("A2"), n("G3"), n("C4"), n("E4")]]
+    melody = [
+        [("A4", 0, 1.5), ("C5", 1.5, 1), ("D5", 2.5, 1.5)],
+        [("F5", 0, 2), ("E5", 2, 1), ("D5", 3, 1)],
+        [("E5", 0, 1), ("G5", 1, 1), ("B4", 2, 2)],
+        [("C5", 0, 1.5), ("A4", 2, 2)],
+        [("D5", 0, 1), ("F5", 1, 1), ("A5", 2, 1), ("G5", 3, 1)],
+        [("F5", 0, 3)],
+        [("E5", 0, 1), ("D5", 1, 1), ("C5", 2, 1), ("B4", 3, 1)],
+        [("A4", 0, 3)],
     ]
-
-    def lead(buf, bar, start, eighth, root, minor, rng):
-        m = motifs[bar % len(motifs)]
-        for i, iv in enumerate(m):
-            if iv is None:
-                continue
-            note = root + iv
-            if not minor and iv in (15, 3):   # 大調和弦把小三度改成大三度
-                note += 1
-            length = eighth * (2 if i + 1 < len(m) and m[i + 1] is None else 1)
-            mix_into(buf, int((start + i * eighth) * RATE),
-                     tone(freq(note + 12), length * 0.95, "square", 0.25, vib=0.004, release=0.03), 0.16)
-
-    def bass(buf, bar, start, eighth, root):
-        for i in range(8):
-            note = root - 12 + (12 if i % 2 else 0)
-            mix_into(buf, int((start + i * eighth) * RATE), tone(freq(note), eighth * 0.9, "tri", release=0.02), 0.32)
-
-    def drums(buf, bar, start, eighth):
-        for i in range(8):
-            t = int((start + i * eighth) * RATE)
-            if i in (0, 4):
-                mix_into(buf, t, kick(), 0.45)
-            if i in (2, 6):
-                mix_into(buf, t, snare(), 0.22)
-            mix_into(buf, t, hat(), 0.06)
-
-    return song(140, 16, chords, lead, bass, drums, 11)
+    return lofi(78, chords, melody)
 
 
 def make_final():
-    """決戰：更快、更緊張，Am - Am - F - E，16 分音符琶音"""
-    chords = [(n("A3"), True), (n("A3"), True), (n("F3"), False), (n("E3"), False)]
-
-    def lead(buf, bar, start, eighth, root, minor, rng):
-        tones = chord_tones(root, minor) + [root + 12]
-        six = eighth / 2
-        pattern = [0, 1, 2, 3, 2, 1, 2, 3] if bar % 2 == 0 else [3, 2, 1, 0, 1, 2, 3, 2]
-        for i in range(16):
-            note = tones[pattern[i % 8]] + 12
-            mix_into(buf, int((start + i * six) * RATE), tone(freq(note), six * 0.8, "square", 0.125, release=0.01), 0.12)
-        # 上面一條長音的主旋律
-        top = [12, 15, 14, 11] if minor else [12, 16, 14, 11]
-        for k, iv in enumerate(top):
-            mix_into(buf, int((start + k * eighth * 2) * RATE),
-                     tone(freq(root + iv + 12), eighth * 1.9, "square", 0.5, vib=0.006, release=0.05), 0.09)
-
-    def bass(buf, bar, start, eighth, root):
-        six = eighth / 2
-        for i in range(16):
-            note = root - 12 + (7 if i % 4 == 3 else 0)
-            mix_into(buf, int((start + i * six) * RATE), tone(freq(note), six * 0.85, "tri", release=0.01), 0.34)
-
-    def drums(buf, bar, start, eighth):
-        for i in range(8):
-            t = int((start + i * eighth) * RATE)
-            if i % 2 == 0:
-                mix_into(buf, t, kick(0.14), 0.5)
-            if i in (2, 6):
-                mix_into(buf, t, snare(), 0.26)
-            mix_into(buf, t, hat(), 0.08)
-            mix_into(buf, int(t + eighth / 2 * RATE), hat(0.02), 0.05)
-
-    return song(168, 16, chords, lead, bass, drums, 23)
+    """決戰：一樣是 Lo-fi，但改成小調、快一點、鼓和低音比較密：Am7 - Fmaj7 - Dm7 - E7"""
+    chords = [[n("A2"), n("G3"), n("C4"), n("E4")], [n("F2"), n("E3"), n("A3"), n("C4")],
+              [n("D3"), n("F3"), n("A3"), n("C4")], [n("E2"), n("D3"), n("G#3"), n("B3")]]
+    melody = [
+        [("E5", 0, 1), ("A5", 1, 1), ("G5", 2, 1), ("E5", 3, 1)],
+        [("C5", 0, 1.5), ("E5", 1.5, 0.5), ("F5", 2, 2)],
+        [("D5", 0, 1), ("F5", 1, 1), ("A5", 2, 1.5), ("C6", 3.5, 0.5)],
+        [("B5", 0, 1.5), ("G#5", 1.5, 0.5), ("E5", 2, 2)],
+        [("A5", 0, 0.5), ("G5", 0.5, 0.5), ("E5", 1, 1), ("C5", 2, 1), ("E5", 3, 1)],
+        [("F5", 0, 1), ("E5", 1, 1), ("C5", 2, 2)],
+        [("D5", 0, 1), ("E5", 1, 1), ("F5", 2, 1), ("A5", 3, 1)],
+        [("G#5", 0, 2), ("B5", 2, 2)],
+    ]
+    return lofi(92, chords, melody, busy=True)
 
 
 # ---------- 音效 ----------
 
-def arpeggio(notes, step, kind="square", duty=0.5, tail=0.0):
+def arpeggio(notes, step, kind="bell", duty=0.5, tail=0.0):
     buf = [0.0] * int((len(notes) * step + tail + 0.05) * RATE)
     for i, note in enumerate(notes):
         length = step + (tail if i == len(notes) - 1 else 0)
@@ -262,36 +297,35 @@ def layer(*parts):
     return buf
 
 
-SFX = {
-    "shoot": lambda: tone(900, 0.06, "square", 0.25, f1=350),
-    "slash": lambda: layer((noise(0.12, 1, 5, 1.2, 0.5), 0.8), (tone(700, 0.08, "square", 0.25, f1=1400), 0.25)),
-    "wave": lambda: layer((tone(300, 0.12, "square", 0.25, f1=900), 0.5), (noise(0.12, 1, 9, 1.5, 0.4), 0.4)),
-    "hit": lambda: layer((noise(0.04, 2, 2, 1.0), 0.7), (tone(220, 0.04, "square", 0.5, f1=140), 0.4)),
-    "kill": lambda: layer((tone(600, 0.14, "square", 0.5, f1=90), 0.5), (noise(0.14, 2, 4, 1.5), 0.5)),
-    "gold": lambda: arpeggio([n("E6"), n("B6")], 0.04),
-    "level": lambda: arpeggio([n("C5"), n("E5"), n("G5"), n("C6"), n("E6")], 0.07, tail=0.15),
-    "chest": lambda: arpeggio([n("G5"), n("B5"), n("D6"), n("G6"), n("B6"), n("D7")], 0.05, "square", 0.25, tail=0.2),
-    "pick": lambda: arpeggio([n("C6"), n("G6")], 0.06, "square", 0.25),
-    "hurt": lambda: layer((tone(260, 0.22, "square", 0.5, f1=90), 0.6), (noise(0.18, 3, 6, 1.2), 0.5)),
-    "dash": lambda: noise(0.16, 1, 8, 0.8, 0.3),
-    "jump": lambda: tone(200, 0.16, "square", 0.25, f1=700),
-    "land": lambda: layer((tone(120, 0.3, "sine", f1=35), 1.0), (noise(0.25, 4, 10, 1.5, 0.5), 0.6)),
-    "smite": lambda: layer((noise(1.0, 2, 12, 1.2, 0.6), 0.7), (tone(90, 1.0, "sine", f1=30), 0.8),
-                           (arpeggio([n("A5"), n("E6"), n("A6")], 0.08, "square", 0.25, tail=0.5), 0.4)),
-    "boss": lambda: layer(*[(([0.0] * int(i * 0.2 * RATE)) + tone(660 if i % 2 == 0 else 440, 0.18, "square", 0.5,
-                                                                    release=0.02), 0.5) for i in range(4)]),
-    "final": lambda: layer(*[(([0.0] * int(i * 0.25 * RATE)) + tone(freq(note), 0.4, "square", 0.5, vib=0.01,
-                                                                     release=0.1), 0.5)
-                             for i, note in enumerate([n("A4"), n("A4"), n("A4"), n("F4"), n("E4")])],
-                           (tone(55, 1.4, "tri"), 0.5)),
-    "block": lambda: layer((tone(1500, 0.1, "square", 0.5), 0.3), (tone(2250, 0.1, "square", 0.5), 0.25)),
-    "explode": lambda: layer((noise(0.45, 3, 13, 1.5, 0.5), 0.9), (tone(100, 0.4, "sine", f1=30), 0.8)),
-    "win": lambda: arpeggio([n("C5"), n("E5"), n("G5"), n("C6"), n("G5"), n("C6"), n("E6")], 0.12, "square", 0.25,
-                            tail=0.6),
-    "lose": lambda: arpeggio([n("E5"), n("C5"), n("A4"), n("E4"), n("A3")], 0.2, "tri", tail=0.6),
-    "ui_move": lambda: tone(880, 0.03, "square", 0.25),
-    "ui_ok": lambda: arpeggio([n("E5"), n("B5")], 0.05, "square", 0.25),
-    "pause": lambda: arpeggio([n("B5"), n("E5")], 0.06, "square", 0.25),
+SFX = {   # 音色以正弦、撥弦、鐘聲為主，比較乾淨，跟 Lo-fi 音樂搭
+    "shoot": lambda: tone(880, 0.07, "pluck", f1=620),
+    "slash": lambda: layer((noise(0.13, 1, 5, 1.6, 0.18), 0.8), (tone(520, 0.1, "sine", f1=260), 0.3)),
+    "wave": lambda: layer((tone(330, 0.16, "sine", f1=660), 0.5), (noise(0.14, 1, 9, 1.8, 0.15), 0.5)),
+    "hit": lambda: layer((tone(260, 0.05, "sine", f1=160), 0.7), (noise(0.04, 1, 2, 2.0, 0.2), 0.4)),
+    "kill": lambda: layer((tone(520, 0.14, "pluck", f1=260), 0.6), (noise(0.1, 1, 4, 2.0, 0.15), 0.4)),
+    "gold": lambda: arpeggio([n("E6"), n("B6")], 0.045),
+    "level": lambda: arpeggio([n("C5"), n("E5"), n("G5"), n("C6"), n("E6")], 0.08, tail=0.4),
+    "chest": lambda: arpeggio([n("G5"), n("B5"), n("D6"), n("G6"), n("B6"), n("D7")], 0.06, tail=0.4),
+    "pick": lambda: arpeggio([n("C6"), n("G6")], 0.06),
+    "hurt": lambda: layer((tone(240, 0.24, "sine", f1=110), 0.8), (noise(0.16, 2, 6, 1.5, 0.15), 0.5)),
+    "dash": lambda: noise(0.18, 1, 8, 1.0, 0.12),
+    "jump": lambda: tone(260, 0.18, "sine", f1=620),
+    "land": lambda: layer((tone(110, 0.32, "sine", f1=40), 1.0), (noise(0.25, 2, 10, 1.8, 0.1), 0.6)),
+    "smite": lambda: layer((noise(1.0, 1, 12, 1.4, 0.12), 0.6), (tone(80, 1.0, "sine", f1=35), 0.8),
+                           (arpeggio([n("A5"), n("E6"), n("A6")], 0.09, tail=0.7), 0.5)),
+    "boss": lambda: layer(*[(([0.0] * int(i * 0.22 * RATE)) + tone(freq(note), 0.3, "bell"), 0.6)
+                            for i, note in enumerate([n("E5"), n("C5"), n("E5"), n("C5")])],
+                          (tone(65, 1.0, "sine"), 0.4)),
+    "final": lambda: layer(*[(([0.0] * int(i * 0.28 * RATE)) + tone(freq(note), 0.6, "bell"), 0.6)
+                             for i, note in enumerate([n("A4"), n("C5"), n("E5"), n("G#5"), n("A5")])],
+                           (tone(55, 1.6, "sine"), 0.5)),
+    "block": lambda: layer((tone(1500, 0.2, "bell"), 0.4), (tone(2250, 0.2, "bell"), 0.25)),
+    "explode": lambda: layer((noise(0.5, 2, 13, 1.6, 0.1), 0.9), (tone(90, 0.45, "sine", f1=35), 0.9)),
+    "win": lambda: arpeggio([n("C5"), n("E5"), n("G5"), n("C6"), n("G5"), n("C6"), n("E6")], 0.13, tail=0.9),
+    "lose": lambda: arpeggio([n("E5"), n("C5"), n("A4"), n("E4"), n("A3")], 0.22, "pluck", tail=0.9),
+    "ui_move": lambda: tone(880, 0.06, "pluck"),
+    "ui_ok": lambda: arpeggio([n("E5"), n("B5")], 0.06),
+    "pause": lambda: arpeggio([n("B5"), n("E5")], 0.07),
 }
 
 

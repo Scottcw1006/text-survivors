@@ -76,7 +76,7 @@
 
 - `main.gd`：選角、一局的流程、生成、攻擊、金、HUD；最上面的常數就是平衡參數
 - `game_audio.gd`：音樂與音效（音效太密集會自動略過、靜音）
-- `tools/gen_audio.py`：用程式合成 8-bit 音樂與音效，輸出到 `audio/`（改旋律或音色就改它再執行 `python3 tools/gen_audio.py`）
+- `tools/gen_audio.py`：用程式合成 Lo-fi 背景音樂（一般、決戰）與音效，輸出到 `audio/`（改旋律或音色就改它再執行 `python3 tools/gen_audio.py`）
 - `build_web.sh`：匯出網頁版（帶版本號）；`version.gd` 由它自動產生
 - `touch_controls.gd`：手機觸控（虛擬搖桿、技／天按鍵、點卡片）
 - `glyph.gd`：把一個字畫在畫面上（人、敵、子彈都是它）

@@ -48,6 +48,7 @@ const ENEMY_GAP := 2.0              # 敵人彼此多保持的距離，避免疊
 const HP_GROWTH_PER_MINUTE := 0.10  # 每過一分鐘，新生的敵人血量 +10%
 const BOSS_INTERVAL := 60.0         # 每隔幾秒出一隻王
 const BOSS_LAND_MULT := 5.0         # 刀落地對王的傷害倍率（王不會被瞬殺）
+const WOBBLE_AMOUNT := 1.2           # 魂、鬼左右飄的幅度（相對於移動速度）
 const RAT_GROUP := 4                # 鼠一次來幾隻
 const BIRD_GROUP := 3               # 鳥一次來幾隻
 const FINAL_SIZE_MULT := 1.3        # 最終王的字放大幾倍（會取最近的 11 的倍數，像素字才銳利）
@@ -81,6 +82,12 @@ const ENEMY_TYPES := {
 	# 冑：甲的進階，兩倍血、完全不吃擊退
 	"冑": {"hp": 120.0, "speed": 55.0, "radius": 15.0, "size": 33, "damage": 30, "gold": 5,
 		"color": Color(0.65, 0.2, 0.2), "knock_resist": 0.0},
+	# 魂：穿牆、左右飄著過來，第一次被打到完全無效（半透明 = 還有無敵）
+	"魂": {"hp": 15.0, "speed": 90.0, "radius": 14.0, "size": 33, "damage": 20, "gold": 2,
+		"color": Color(0.55, 0.65, 1.0), "ignores_walls": true, "wobble": true, "shield": 1},
+	# 鬼：魂的進階，速度 1.5 倍、無敵三次
+	"鬼": {"hp": 22.5, "speed": 135.0, "radius": 14.0, "size": 33, "damage": 25, "gold": 3,
+		"color": Color(0.4, 0.5, 1.0), "ignores_walls": true, "wobble": true, "shield": 3},
 	"王": {"hp": 600.0, "speed": 70.0, "radius": 28.0, "size": 66, "damage": 50, "gold": 25,
 		"color": Color(1.0, 0.2, 0.2), "ignores_walls": true, "knock_resist": 0.15, "boss": true},
 	# 最終王之一：會穿牆，保持距離一次放 5 支扇形的矢
@@ -573,7 +580,7 @@ func _show_select() -> void:
 
 ## 難度：hp = 怪物血量倍率、count = 怪物數量倍率、speed = 移動速度倍率、banned = 不會出現的怪
 const DIFFICULTIES := [
-	{"name": "簡單", "hp": 0.5, "count": 0.5, "speed": 0.7, "banned": ["鳥", "冑", "弩"]},
+	{"name": "簡單", "hp": 0.5, "count": 0.5, "speed": 0.7, "banned": ["鳥", "冑", "弩", "魂", "鬼"]},
 	{"name": "普通", "hp": 1.0, "count": 1.0, "speed": 1.0, "banned": []},
 	{"name": "困難", "hp": 1.5, "count": 1.2, "speed": 1.2, "banned": []},
 ]
@@ -813,7 +820,7 @@ func _land() -> void:
 			continue
 		if e.is_boss:
 			_damage_enemy(e, _damage() * BOSS_LAND_MULT)
-		else:
+		elif not _block_hit(e):   # 魂、鬼的無敵也擋得住落地
 			_kill_enemy(e)
 	var fx := Fx.new()
 	var count := 12   # 範圍變大，「震」也多幾個才不會太稀
@@ -920,6 +927,10 @@ func _pick_enemy_type() -> String:
 		weights["冑"] = 10.0
 	if elapsed > 120.0:
 		weights["弩"] = 10.0
+	if elapsed > 50.0:
+		weights["魂"] = 10.0
+	if elapsed > 110.0:
+		weights["鬼"] = 8.0
 	for k: String in DIFFICULTIES[difficulty].banned:
 		weights.erase(k)
 	var total := 0.0
@@ -957,6 +968,9 @@ func _move_enemies(delta: float) -> void:
 		var vel: Vector2
 		if e.ignores_walls:
 			vel = to_player.normalized() * e.speed
+			if e.wobble:
+				# 魂、鬼：往玩家飄，同時左右亂晃
+				vel += to_player.normalized().orthogonal() * e.sway() * e.speed * WOBBLE_AMOUNT
 		else:
 			# 照尋路結果走，會繞過牆
 			vel = terrain.flow_direction(e.position, player.position) * e.speed
@@ -1022,6 +1036,8 @@ func _damage() -> float:
 
 ## 打敵人：跳傷害數字、擊退，打死就碎開並掉落
 func _damage_enemy(e: Enemy, amount: float, knock := Vector2.ZERO) -> void:
+	if _block_hit(e):
+		return
 	var boss := e.is_boss
 	var num := particles.add(str(int(round(amount))),
 			e.position + Vector2(randf_range(-8, 8), -e.radius - 6.0),
@@ -1030,6 +1046,16 @@ func _damage_enemy(e: Enemy, amount: float, knock := Vector2.ZERO) -> void:
 	e.knock += knock * e.knock_resist
 	if e.take_damage(amount):
 		_kill_enemy(e)
+
+
+## 魂、鬼還有無敵次數時，這次攻擊完全無效，跳一個「無效」
+func _block_hit(e: Enemy) -> bool:
+	if not e.block_hit():
+		return false
+	var p := particles.add("無效", e.position + Vector2(0, -e.radius - 6.0),
+			Vector2(randf_range(-20, 20), -60), 0.45, 22, e.base_color)
+	p.drag = 2.0
+	return true
 
 
 ## 死亡特效：字放大淡出，同時碎成幾個筆畫往外飛

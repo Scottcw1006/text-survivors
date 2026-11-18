@@ -138,7 +138,7 @@ const CANNON_DAMAGE := 24.0
 const CANNON_RADIUS := 54.0           # Lv1 爆炸半徑（1.5 格），Lv2 ×2、Lv4 再 ×2
 const CANNON_SPREAD := 0.22           # Lv3 以上兩發之間的角度（弧度）
 const CANNON_BIG_DIST := 360.0        # Lv5 巨砲飛 10 格後爆炸
-const CANNON_BIG_RADIUS := 216.0      # 巨砲半徑 6 格
+const CANNON_BIG_RADIUS := 360.0      # 巨砲半徑 10 格
 const CANNON_BIG_MULT := 3.0          # 巨砲傷害倍率
 const CANNON_PIERCE_BONUS := 0.25     # 每一級「穿」讓砲的傷害 +25%
 const COLOR_CANNON := Color(1.0, 0.55, 0.2)
@@ -208,7 +208,7 @@ const POWER_INFO := {
 			"爆炸範圍加倍",
 			"一次射兩發",
 			"爆炸範圍\n再加倍",
-			"巨砲：\n兩發中間多一發\n巨砲，飛 10 格\n後大爆炸，\n半徑 6 格"]},
+			"巨砲：\n兩發中間多一發\n巨砲，飛 10 格\n後大爆炸，\n半徑 10 格"]},
 	},
 	"刀": {
 		"刀": {"name": "刀法", "desc": ["", "",

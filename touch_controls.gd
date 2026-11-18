@@ -93,6 +93,12 @@ func _menu_tap(finger: int, pos: Vector2) -> void:
 	if main.state == main.State.SELECT and cards.subtitle_rect.has_point(pos):
 		main.toggle_touch_mode()
 		return
+	# 選角畫面：點難度
+	if main.state == main.State.SELECT:
+		var d := cards.option_at(pos)
+		if d >= 0:
+			main.set_difficulty(d)
+			return
 	if cards.cursor < 0:
 		# 結算畫面：要點到「再來一局」按鈕才會重開
 		if cards.button_rect.has_point(pos):

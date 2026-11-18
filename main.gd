@@ -6,6 +6,7 @@ const GAME_DURATION := 180.0        # 撐過幾秒進入決戰
 const FINAL_BOSSES := ["王", "王", "大弓"]   # 決戰出現的最終王，全部打倒才算贏
 const VOLLEY_SPREAD := 0.7          # 大弓一次放箭的扇形角度（弧度，約 40 度）
 const PLAYER_MAX_HP := 100
+const VITAL_REGEN := 0.1             # 「體」每一級每秒回多少血
 const PLAYER_SPEED := 220.0
 const PLAYER_RADIUS := 14.0
 const BASE_DAMAGE := 10.0           # 斬擊、迴旋刃等的基礎傷害
@@ -66,14 +67,14 @@ const ENEMY_TYPES := {
 	"敵": {"hp": 15.0, "speed": 90.0, "radius": 14.0, "size": 33, "damage": 30, "gold": 1,
 		"color": Color(1.0, 0.45, 0.45)},
 	"鼠": {"hp": 7.5, "speed": 150.0, "radius": 10.0, "size": 22, "damage": 15, "gold": 1,
-		"color": Color(0.7, 0.25, 0.3)},
+		"color": Color(0.3, 0.6, 0.35)},
 	"甲": {"hp": 60.0, "speed": 55.0, "radius": 15.0, "size": 33, "damage": 30, "gold": 3,
 		"color": Color(0.8, 0.3, 0.3)},
 	"弓": {"hp": 22.5, "speed": 80.0, "radius": 14.0, "size": 33, "damage": 15, "gold": 2,
 		"color": Color(0.65, 0.35, 0.9), "ranged": true},
 	# 鳥：鼠的進階，速度 1.5 倍、血多一點
 	"鳥": {"hp": 10.0, "speed": 225.0, "radius": 10.0, "size": 22, "damage": 15, "gold": 1,
-		"color": Color(0.85, 0.3, 0.55)},
+		"color": Color(0.5, 0.9, 0.45)},
 	# 弩：弓的進階，開始放箭的距離是弓的 1.5 倍、血多一點
 	"弩": {"hp": 30.0, "speed": 80.0, "radius": 14.0, "size": 33, "damage": 15, "gold": 3,
 		"color": Color(0.5, 0.25, 0.85), "ranged": true, "shoot_range": 450.0},
@@ -198,7 +199,7 @@ const UPGRADES := [
 	{"id": "pierce", "icon": "穿", "name": "穿透",     "desc": "子彈多穿過 1 個敵人", "who": "人"},
 	{"id": "reach",  "icon": "廣", "name": "斬擊範圍", "desc": "斬擊距離 +20%", "who": "刀"},
 	{"id": "speed",  "icon": "速", "name": "移動速度", "desc": "移動速度 +12%", "who": "all"},
-	{"id": "vital",  "icon": "體", "name": "體魄",     "desc": "血量上限 +20，並回 10 血", "who": "all"},
+	{"id": "vital",  "icon": "體", "name": "體魄",     "desc": "每秒回 0.1 血", "who": "all"},
 	{"id": "magnet", "icon": "磁", "name": "吸金",     "desc": "吸金範圍 +35%", "who": "all"},
 	{"id": "focus",  "icon": "息", "name": "調息",     "desc": "技能冷卻 -15%", "who": "all"},
 ]
@@ -267,6 +268,7 @@ class Fx:
 
 
 static var last_character := 0      # 重開時記得上次選的角色
+static var difficulty := 1          # 難度：0 簡單、1 普通、2 困難（重開會記得）
 static var touch_mode := -1          # 操作模式：-1 還沒決定（開局自動偵測）、0 電腦、1 手機
 
 var state := State.SELECT
@@ -279,7 +281,7 @@ var level := 1
 var xp := 0                        # 這一級已經吃到的金
 var pending_levels := 0            # 一次吃很多金時，可能連升好幾級
 var pending_power := 0             # 還沒選的寶箱強化
-var power_choices: Array = []      # 寶箱卡片上的選項（"彈" / "刀" / "癒"）
+var power_choices: Array = []      # 寶箱卡片上的選項（"彈" / "刀"）
 var power_cursor := 0
 var bullet_lv := 1                 # 強化線「彈」
 var blade_lv := 1                  # 強化線「刀」
@@ -306,6 +308,8 @@ var bullet_pierce := 0
 var slash_range := SLASH_RANGE
 var player_speed := PLAYER_SPEED
 var max_hp := PLAYER_MAX_HP
+var regen_per_sec := 0.0             # 每秒自動回血（「體」）
+var regen_acc := 0.0                 # 回血累積到 1 才真的加 1 點
 var pickup_range := GOLD_PICKUP_RANGE
 var skill_cooldown := SKILL_COOLDOWN
 var invincible := 0.0
@@ -439,6 +443,11 @@ func _process(delta: float) -> void:
 		return
 
 	elapsed += delta
+	if regen_per_sec > 0.0 and hp < max_hp:
+		regen_acc += regen_per_sec * delta
+		if regen_acc >= 1.0:
+			hp = mini(hp + int(regen_acc), max_hp)
+			regen_acc -= floorf(regen_acc)
 	final_hint_time = maxf(0.0, final_hint_time - delta)
 	if not final_phase and elapsed >= GAME_DURATION:
 		_start_final_phase()
@@ -523,6 +532,10 @@ func _setup_input() -> void:
 func _process_select() -> void:
 	if Input.is_action_just_pressed("toggle_mode"):
 		toggle_touch_mode()
+	if Input.is_action_just_pressed("move_up"):
+		set_difficulty(difficulty - 1)
+	elif Input.is_action_just_pressed("move_down"):
+		set_difficulty(difficulty + 1)
 	var step := 0
 	if Input.is_action_just_pressed("move_left"):
 		step = -1
@@ -547,12 +560,28 @@ func _show_select() -> void:
 	for c: Dictionary in CHARACTERS:
 		var desc: String = c.desc.replace("Shift", "技") if is_touch else c.desc
 		cards.append({"icon": c.glyph, "name": c.name, "sub": "", "desc": desc})
+	var names := DIFFICULTIES.map(func(d: Dictionary) -> String: return d.name)
 	if is_touch:
 		level_cards.show_cards("選擇角色", cards, character, "點卡片選擇，再點一次開始",
 				"操作模式：手機　（點這裡切換成電腦）", TUTORIAL_TIPS_TOUCH)
+		level_cards.set_options("難度", names, difficulty, "點選")
 	else:
-		level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選擇　Space / Enter 開始",
+		level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選角色　W S / ↑↓ 選難度　Space / Enter 開始",
 				"操作模式：電腦　（按 Tab 或點這裡切換成手機）", TUTORIAL_TIPS)
+		level_cards.set_options("難度", names, difficulty, "W S / ↑↓")
+
+
+## 難度：hp = 怪物血量倍率、count = 怪物數量倍率、speed = 移動速度倍率、banned = 不會出現的怪
+const DIFFICULTIES := [
+	{"name": "簡單", "hp": 0.5, "count": 0.5, "speed": 0.7, "banned": ["鳥", "冑", "弩"]},
+	{"name": "普通", "hp": 1.0, "count": 1.0, "speed": 1.0, "banned": []},
+	{"name": "困難", "hp": 1.5, "count": 1.2, "speed": 1.2, "banned": []},
+]
+
+
+func set_difficulty(i: int) -> void:
+	difficulty = clampi(i, 0, DIFFICULTIES.size() - 1)
+	_show_select()
 
 
 ## 選角畫面下面的操作教學（手機版）
@@ -843,6 +872,7 @@ func _spawn_enemies(delta: float) -> void:
 	if spawn_cd > 0.0:
 		return
 	spawn_cd = lerpf(SPAWN_INTERVAL_START, SPAWN_INTERVAL_END, minf(elapsed / GAME_DURATION, 1.0))
+	spawn_cd /= DIFFICULTIES[difficulty].count   # 數量多 = 生得快
 	var pos := _find_spawn_point()
 	if pos == Vector2.INF:
 		return
@@ -890,6 +920,8 @@ func _pick_enemy_type() -> String:
 		weights["冑"] = 10.0
 	if elapsed > 120.0:
 		weights["弩"] = 10.0
+	for k: String in DIFFICULTIES[difficulty].banned:
+		weights.erase(k)
 	var total := 0.0
 	for k: String in weights:
 		total += weights[k]
@@ -901,12 +933,14 @@ func _pick_enemy_type() -> String:
 	return "敵"
 
 
+## 怪物血量倍率：隨時間成長 × 難度
 func _hp_mult() -> float:
-	return 1.0 + HP_GROWTH_PER_MINUTE * floorf(elapsed / 60.0)
+	return (1.0 + HP_GROWTH_PER_MINUTE * floorf(elapsed / 60.0)) * DIFFICULTIES[difficulty].hp
 
 
 func _spawn_enemy(kind: String, pos: Vector2) -> void:
 	var e := Enemy.new().setup_type(kind, ENEMY_TYPES[kind], _hp_mult())
+	e.speed *= DIFFICULTIES[difficulty].speed
 	e.position = pos
 	e.z_index = 3 if ENEMY_TYPES[kind].get("boss", false) else 2
 	e.shoot_interval = ARROW_INTERVAL
@@ -1686,7 +1720,6 @@ func _open_power_up() -> void:
 		for i in 20:
 			_drop_gold(player.position + Vector2.from_angle(randf() * TAU) * randf_range(20.0, 60.0))
 		return
-	opts.append("癒")   # 不升級，改成回滿血
 	power_choices = opts
 	power_cursor = 0
 	state = State.POWER_UP
@@ -1702,9 +1735,6 @@ func _show_power_up() -> void:
 	var who: String = CHARACTERS[character].glyph
 	var cards := []
 	for line: String in power_choices:
-		if line == "癒":
-			cards.append({"icon": "癒", "name": "回滿血", "sub": "%d/%d" % [hp, max_hp], "desc": "不強化武器，血量直接回到上限"})
-			continue
 		var info: Dictionary = POWER_INFO[who][line]
 		var lv := _line_level(line)
 		cards.append({"icon": line, "name": info.name, "sub": "Lv %d→%d" % [lv, lv + 1], "desc": info.desc[lv + 1]})
@@ -1723,8 +1753,6 @@ func _process_power_up() -> void:
 	if Input.is_action_just_pressed("confirm"):
 		if power_choices[power_cursor] == "彈":
 			bullet_lv += 1
-		elif power_choices[power_cursor] == "癒":
-			hp = max_hp
 		else:
 			blade_lv += 1
 		level_cards.visible = false
@@ -1921,8 +1949,7 @@ func _apply_upgrade(id: String) -> void:
 		"speed":
 			player_speed *= 1.12
 		"vital":
-			max_hp += 20
-			hp = mini(hp + 10, max_hp)
+			regen_per_sec += VITAL_REGEN
 		"power":
 			damage_mult += 0.2
 		"magnet":
@@ -2193,7 +2220,7 @@ func _end(result: State) -> void:
 	if result == State.DEAD:
 		title = "你倒下了"
 		player.set_text("亡")
-	var stats := "存活 %s　級 %d　擊倒 %d　金 %d" % [_fmt_time(elapsed), level, kills, gold]
+	var stats := "難度 %s　存活 %s　級 %d　擊倒 %d　金 %d" % [DIFFICULTIES[difficulty].name, _fmt_time(elapsed), level, kills, gold]
 	# 手機：要點「再來一局」按鈕才重開（避免手指誤觸直接跳過）；電腦維持原本按 Space / Enter
 	if is_touch:
 		level_cards.show_cards(title, _final_level_cards(), -1, "", stats, [], "再來一局")

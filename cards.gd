@@ -32,6 +32,11 @@ var cursor := 0
 var tips: Array = []               # [{name, key, desc}]，選角時才有
 var card_rects: Array[Rect2] = []  # 每張卡片畫在哪（手機點卡片用）
 var subtitle_rect := Rect2()       # 標題下那行小字的範圍（選角時點它切換操作模式）
+var opt_label := ""                # 標題下的一排選項（選角的難度），空字串 = 沒有
+var opt_items: Array = []
+var opt_sel := 0
+var opt_hint := ""
+var opt_rects: Array[Rect2] = []
 var button := ""                   # 卡片下面的按鈕文字（結算的「再來一局」），空字串 = 沒有按鈕
 var button_rect := Rect2()
 
@@ -39,6 +44,7 @@ var button_rect := Rect2()
 func show_cards(t: String, c: Array, selected: int, h: String, sub_title := "", tip_cards := [], button_text := "") -> void:
 	title = t
 	button = button_text
+	opt_label = ""
 	tips = tip_cards
 	subtitle = sub_title
 	cards = c
@@ -46,6 +52,23 @@ func show_cards(t: String, c: Array, selected: int, h: String, sub_title := "", 
 	hint = h
 	visible = true
 	queue_redraw()
+
+
+## 在標題下面加一排選項（要在 show_cards 之後叫）
+func set_options(label: String, items: Array, selected: int, hint_text: String) -> void:
+	opt_label = label
+	opt_items = items
+	opt_sel = selected
+	opt_hint = hint_text
+	queue_redraw()
+
+
+## 點到第幾個選項，沒點到回傳 -1
+func option_at(pos: Vector2) -> int:
+	for i in opt_rects.size():
+		if opt_rects[i].has_point(pos):
+			return i
+	return -1
 
 
 ## 卡片排成幾欄（卡片太多就換行，每行放得下幾張就放幾張），以及卡片＋教學卡的總高度
@@ -61,9 +84,16 @@ func _layout(width: float) -> Vector3:
 	return Vector3(per_row, cards_h, total_h)
 
 
+func _top_h() -> float:
+	var h := 130.0 if subtitle != "" else 90.0
+	if opt_label != "":
+		h += 56.0
+	return h
+
+
 ## 上面標題、下面提示／按鈕要佔多少高度
 func _extra_h() -> float:
-	var top := 130.0 if subtitle != "" else 90.0
+	var top := _top_h()
 	var bottom := 80.0
 	if button != "":
 		bottom = 170.0 if hint != "" else 130.0
@@ -91,17 +121,19 @@ func _draw() -> void:
 	var total_h := lay.z
 	var tip_w := TIP_COLS * CELL
 	var tip_h := TIP_ROWS * CELL
-	var top := 130.0 if subtitle != "" else 90.0
+	var top := _top_h()
 	var y0 := (view.y - total_h - _extra_h()) / 2.0 + top
 
+	var oy := 56.0 if opt_label != "" else 0.0   # 有選項那排，標題再往上移
 	if subtitle != "":
-		_text(title, Vector2(view.x / 2.0, y0 - 100.0), 44, COLOR_ON)
-		_text(subtitle, Vector2(view.x / 2.0, y0 - 48.0), 33, COLOR_ON)
+		_text(title, Vector2(view.x / 2.0, y0 - 100.0 - oy), 44, COLOR_ON)
+		_text(subtitle, Vector2(view.x / 2.0, y0 - 48.0 - oy), 33, COLOR_ON)
 		var sw := font.get_string_size(subtitle, HORIZONTAL_ALIGNMENT_LEFT, -1, 33).x
-		subtitle_rect = _scaled(Rect2(view.x / 2.0 - sw / 2.0 - 20.0, y0 - 48.0 - 30.0, sw + 40.0, 60.0), k)
+		subtitle_rect = _scaled(Rect2(view.x / 2.0 - sw / 2.0 - 20.0, y0 - 48.0 - oy - 30.0, sw + 40.0, 60.0), k)
 	else:
 		subtitle_rect = Rect2()
-		_text(title, Vector2(view.x / 2.0, y0 - 56.0), 44, COLOR_ON)
+		_text(title, Vector2(view.x / 2.0, y0 - 56.0 - oy), 44, COLOR_ON)
+	_draw_options(view, y0 - 50.0, k)
 
 	card_rects.clear()
 	for i in n:
@@ -163,6 +195,35 @@ func _draw() -> void:
 		if hint != "":
 			_text(hint, Vector2(view.x / 2.0, bo.y + brows * CELL + 30.0), 22, COLOR_TIP)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+## 一排選項：「難度　簡單　〔普通〕　困難　(W S / ↑↓)」，選中的亮、其他暗
+func _draw_options(view: Vector2, cy: float, k: float) -> void:
+	opt_rects.clear()
+	if opt_label == "":
+		return
+	const FS := 33
+	const ITEM_GAP := 30.0
+	var label_w := font.get_string_size(opt_label + "　", HORIZONTAL_ALIGNMENT_LEFT, -1, FS).x
+	var item_ws := []
+	var total := label_w
+	for item: String in opt_items:
+		var w := font.get_string_size("〔%s〕" % item, HORIZONTAL_ALIGNMENT_LEFT, -1, FS).x
+		item_ws.append(w)
+		total += w + ITEM_GAP
+	var hint_w := font.get_string_size(opt_hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x
+	total += hint_w
+	var x := view.x / 2.0 - total / 2.0
+	_text(opt_label, Vector2(x + label_w / 2.0, cy), FS, COLOR_ON)
+	x += label_w
+	for i in opt_items.size():
+		var w: float = item_ws[i]
+		var on := i == opt_sel
+		var t: String = ("〔%s〕" if on else "　%s　") % opt_items[i]
+		_text(t, Vector2(x + w / 2.0, cy), FS, Color(1.0, 0.85, 0.4) if on else COLOR_OFF)
+		opt_rects.append(_scaled(Rect2(x - ITEM_GAP / 2.0, cy - 30.0, w + ITEM_GAP, 60.0), k))
+		x += w + ITEM_GAP
+	_text(opt_hint, Vector2(x + hint_w / 2.0, cy), 22, COLOR_TIP)
 
 
 func _scaled(r: Rect2, k: float) -> Rect2:

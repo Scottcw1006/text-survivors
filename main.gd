@@ -228,7 +228,7 @@ const POWER_INFO := {
 			"兩個分身，\n左右各一",
 			"分身會自己\n衝向附近的\n敵人去砍",
 			"分身傷害\n提高到 100%",
-			"完全繼承：\n分身使用本體的\n所有強化與招式\n（刀法、斬擊波、\n落地震）"]},
+			"繼承本體：\n分身使用本體的\n攻擊力與招式\n（刀法、斬擊波、\n落地震）"]},
 		"彈": {"name": "斬擊波", "desc": ["",
 			"斬擊波：\n自動射出斬擊波，\n飛 8 格，\n可穿透 2 個敵人",
 			"大斬擊波：\n兩倍大",
@@ -1442,7 +1442,7 @@ func _slash() -> void:
 
 # ---------- 刀＋影 ----------
 ## Lv1 身後一個分身跟著揮刀（傷害 50%）　Lv2 兩個分身左右各一　Lv3 分身自己衝向附近的敵人
-## Lv4 分身傷害 100%　Lv5 分身完全繼承本體：刀法、斬擊波、範圍、攻速、攻擊力、落地震
+## Lv4 分身傷害 100%　Lv5 分身繼承本體的攻擊力與招式：刀法、斬擊波、落地震（範圍、攻速不繼承）
 
 var _atk_stack: Array = []
 
@@ -1508,14 +1508,16 @@ func _shade_attack(sh: Shade, delta: float) -> void:
 	var full := shadow_lv >= 5
 	sh.cd -= delta
 	if sh.cd <= 0.0:
-		var reach := slash_range if full else SLASH_RANGE
 		_push_atk(sh.node.position, 1.0, SHADE_FX_COLOR)
-		var target := _nearest_visible_enemy(reach + 14.0)
+		var target := _nearest_visible_enemy(SLASH_RANGE + 14.0)
 		if target != null:
 			if full:
-				# Lv5：跟本體一模一樣的刀法（範圍、攻速、攻擊力都繼承）
-				sh.cd = SLASH_INTERVAL * attack_mult
+				# Lv5：繼承本體的攻擊力和招式（刀法連擊），但範圍、攻速用基本值
+				sh.cd = SLASH_INTERVAL
+				var keep := slash_range
+				slash_range = SLASH_RANGE
 				_slash_at(target)
+				slash_range = keep
 			else:
 				# Lv1～4：單純一刀，用基本範圍和基本傷害
 				sh.cd = SLASH_INTERVAL
@@ -1535,7 +1537,7 @@ func _shade_attack(sh: Shade, delta: float) -> void:
 		if sh.wave_cd <= 0.0:
 			_push_atk(sh.node.position, 1.0, SHADE_FX_COLOR)
 			if _fire_waves():
-				sh.wave_cd = WAVE_INTERVAL * attack_mult
+				sh.wave_cd = WAVE_INTERVAL   # 攻速不繼承
 			_pop_atk()
 
 

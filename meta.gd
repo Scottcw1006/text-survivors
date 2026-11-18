@@ -1,8 +1,8 @@
 class_name Meta
 extends RefCounted
-## 局外成長（rogue-like）：鑽 和局外升級，存在 user://meta.cfg，關掉遊戲再開也還在。
+## 局外成長（rogue-like）：鑽 和鑽石升級，存在 user://meta.cfg，關掉遊戲再開也還在。
 ## - 每玩滿一分鐘拿 1 個 鑽，一局最多 3 個；打倒最終王再多 2 個
-## - 局外升級：一般升級提前升級（最高 3 級）、重抽次數（最高 2 級）、開局寶箱（最高 2 級）
+## - 鑽石升級：一般升級提前升級（最高 3 級）、重抽次數（最高 2 級）、開局寶箱（最高 2 級）
 
 const PATH := "user://meta.cfg"
 const TOKEN_PER_MINUTE := 1
@@ -11,7 +11,7 @@ const TOKEN_WIN_BONUS := 2
 const BASE_REROLLS := 3
 const REROLL_PER_LEVEL := 3
 
-## 局外升級的項目：id、名稱、最高等級、每一級要幾個 鑽
+## 鑽石升級的項目：id、名稱、最高等級、每一級要幾個 鑽
 ## 一般升級的 id 跟 main.gd 的 UPGRADES 一樣（power、haste…），前面加 "up_"
 const ITEMS := [
 	{"id": "up_power",  "icon": "力", "name": "攻擊力",   "max": 3, "cost": [1, 1, 1]},

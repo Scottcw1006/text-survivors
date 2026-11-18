@@ -1,6 +1,6 @@
 class_name MetaMenu
 extends Control
-## 局外升級畫面（選角畫面進來）：一圈「框」字的面板，一行一個項目，用 鑽 升級。
+## 鑽石升級畫面（選角畫面進來）：一圈「框」字的面板，一行一個項目，用 鑽 升級。
 ## 鍵盤：W S 選、Space / Enter 升級、Backspace 全部重置、Esc 或 U 返回。
 ## 手機：點一行選它、再點一次升級；點「重置」退回全部 鑽（要點兩次確認）；點「返回」離開。
 
@@ -67,7 +67,7 @@ func _draw() -> void:
 			if cx == 0 or cy == 0 or cx == COLS - 1 or cy == rows - 1:
 				_text("框", o + Vector2((cx + 0.5) * CELL, (cy + 0.5) * CELL), 17, COLOR_DIM, true)
 	var mid := o.x + w / 2.0
-	_text("局外升級", Vector2(mid, o.y + 52.0), 44, COLOR_ON, true)
+	_text("鑽石升級", Vector2(mid, o.y + 52.0), 44, COLOR_ON, true)
 	_text("鑽　%d" % Meta.tokens, Vector2(mid, o.y + 100.0), 33, COLOR_PICK, true)
 
 	_row_rects.clear()

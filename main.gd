@@ -489,7 +489,7 @@ var level_cards: UpgradeCards       # 升級卡片畫面
 var touch: TouchControls            # 手機觸控（虛擬搖桿、技/天按鍵）
 var audio: GameAudio                # 音樂與音效
 var pause_menu: PauseMenu           # 暫停畫面（音量設定）
-var meta_menu: MetaMenu             # 局外升級畫面
+var meta_menu: MetaMenu             # 鑽石升級畫面
 var rerolls_left := 0               # 這一局升級時還能重抽幾次
 var tokens_earned := -1             # 這一局拿到幾個 鑽（結算時算一次）
 var _ignore_click_frame := -1       # 點暫停畫面的「繼續」那一格，不要觸發天罰
@@ -657,8 +657,8 @@ func _setup_input() -> void:
 		"confirm": [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER],  # 選單確定：Space 左手就按得到，Enter 也可以
 		"toggle_mode": [KEY_TAB],    # 選角畫面切換手機／電腦操作
 		"reroll": [KEY_R],           # 升級時重抽
-		"meta": [KEY_U],             # 選角畫面打開局外升級
-		"meta_reset": [KEY_BACKSPACE],  # 局外升級：全部重置
+		"meta": [KEY_U],             # 選角畫面打開鑽石升級
+		"meta_reset": [KEY_BACKSPACE],  # 鑽石升級：全部重置
 		"pause": [KEY_ESCAPE],       # 遊戲中暫停／繼續
 		"mute": [KEY_M],             # 靜音／取消靜音（任何時候都可以）
 	}
@@ -712,7 +712,7 @@ func _process_select() -> void:
 		_apply_meta_start()
 
 
-## 開局套用局外升級：一般升級先升好、重抽次數、開局寶箱
+## 開局套用鑽石升級：一般升級先升好、重抽次數、開局寶箱
 func _apply_meta_start() -> void:
 	var who: String = CHARACTERS[character].glyph
 	for u: Dictionary in UPGRADES:
@@ -725,7 +725,7 @@ func _apply_meta_start() -> void:
 	_update_hud()
 
 
-# ---------- 局外升級 ----------
+# ---------- 鑽石升級 ----------
 
 func open_meta() -> void:
 	audio.play("ui_ok")
@@ -793,7 +793,7 @@ func _meta_buy() -> void:
 	meta_menu.queue_redraw()
 
 
-## 手機／滑鼠點局外升級畫面：點一行選它，再點一次升級；點「返回」離開
+## 手機／滑鼠點鑽石升級畫面：點一行選它，再點一次升級；點「返回」離開
 func meta_tap(pos: Vector2) -> void:
 	if meta_menu.back_at(pos):
 		close_meta()
@@ -825,11 +825,11 @@ func _show_select() -> void:
 	var descs := DIFFICULTIES.map(func(d: Dictionary) -> String: return d.desc)
 	if is_touch:
 		level_cards.show_cards("選擇角色", cards, character, "點卡片選擇，再點一次開始",
-				"操作模式：手機　（點這裡切換成電腦）", TUTORIAL_TIPS_TOUCH, "局外升級　鑽 %d" % Meta.tokens)
+				"操作模式：手機　（點這裡切換成電腦）", TUTORIAL_TIPS_TOUCH, "鑽石升級　鑽 %d" % Meta.tokens)
 		level_cards.set_options("難度", names, difficulty, "點選", descs)
 	else:
-		level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選角色　W S / ↑↓ 選難度　Space / Enter 開始　U 局外升級",
-				"操作模式：電腦　（按 Tab 或點這裡切換成手機）", TUTORIAL_TIPS, "局外升級　鑽 %d" % Meta.tokens)
+		level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選角色　W S / ↑↓ 選難度　Space / Enter 開始　U 鑽石升級",
+				"操作模式：電腦　（按 Tab 或點這裡切換成手機）", TUTORIAL_TIPS, "鑽石升級　鑽 %d" % Meta.tokens)
 		level_cards.set_options("難度", names, difficulty, "W S / ↑↓", descs)
 
 

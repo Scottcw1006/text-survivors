@@ -11,6 +11,7 @@ const PLAYER_SPEED := 220.0
 const PLAYER_RADIUS := 14.0
 const BASE_DAMAGE := 10.0           # 斬擊、迴旋刃等的基礎傷害
 const BULLET_DAMAGE := 8.0          # 人的子彈基礎傷害
+const ATTACK_PAUSE := 0.3            # 敵人撞到主角之後原地停頓幾秒
 const INVINCIBLE_TIME := 1.0        # 被打後無敵幾秒（避免一碰就連續扣血秒死）
 
 # 「人」：遠程射擊
@@ -796,6 +797,7 @@ func _check_player_hit(delta: float) -> void:
 		return
 	for e: Enemy in _nearby(player.position):
 		if e.position.distance_to(player.position) < PLAYER_RADIUS + e.radius:
+			e.stun = ATTACK_PAUSE   # 攻擊成功的敵人原地停一下，玩家才甩得掉（例如很快的鳥）
 			_hurt_player(e.damage)
 			return
 
@@ -1063,6 +1065,10 @@ func _move_enemies(delta: float) -> void:
 				if e.shoot_cd <= 0.0:
 					e.shoot_cd = e.shoot_interval
 					_shoot_arrow(e)
+		# 剛攻擊成功：原地停頓（還是會被推開、擊退）
+		if e.stun > 0.0:
+			e.stun -= delta
+			vel = Vector2.ZERO
 		# 互相推開，避免全部疊在同一點
 		var push := Vector2.ZERO
 		for o: Enemy in _nearby(e.position):

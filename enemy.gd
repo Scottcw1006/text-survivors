@@ -29,6 +29,7 @@ var wobble := false        # 魂、鬼：走路會左右飄
 var wobble_freq := Vector2.ONE   # 兩個不同頻率的正弦疊起來，飄得不規則
 var wobble_phase := Vector2.ZERO
 var age := 0.0
+var stun := 0.0             # 撞到主角（攻擊成功）後原地停頓的秒數
 
 var base_color := Color.WHITE
 

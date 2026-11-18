@@ -24,9 +24,9 @@ const CHARGE_OVERSHOOT := 40.0        # 衝到目標點後再多衝一點
 const CHARGE_REST := 0.5              # 衝完喘幾秒
 const CHARGE_COOLDOWN := 2.5          # 衝完之後多久才能再蓄力
 const BLAST_RADIUS := 80.0            # 犇的爆炸半徑
-const BLAST_DAMAGE := 20              # 犇的爆炸傷害
+const BLAST_DAMAGE := 15              # 犇的爆炸傷害
 const ATTACK_PAUSE := 0.3            # 敵人撞到主角之後原地停頓幾秒
-const INVINCIBLE_TIME := 1.0        # 被打後無敵幾秒（避免一碰就連續扣血秒死）
+const INVINCIBLE_TIME := 1.5        # 被打後無敵幾秒（避免一碰就連續扣血秒死）
 
 # 「人」：遠程射擊
 const FIRE_INTERVAL := 0.5          # 幾秒射一發（每秒 2 次）
@@ -74,40 +74,40 @@ const FINAL_ARROW_SPEED_MULT := 1.5 # 最終王矢的飛行速度倍率
 const ARCHER_RANGE := 300.0         # 弓在這個距離內、看得到你就停下來放箭
 const ARROW_INTERVAL := 2.0
 const ARROW_SPEED := 220.0
-const ARROW_DAMAGE := 15
+const ARROW_DAMAGE := 10
 const ARROW_LIFETIME := 3.0
 
 ## 敵人種類。hp 是基礎血量（會隨時間成長），gold 是死掉掉幾個金
 ## 鼠的血量要小於子彈基礎傷害 10（三分鐘時 7.5 × 1.3 = 9.75），才會一直被一發打死
 const ENEMY_TYPES := {
-	"敵": {"hp": 15.0, "speed": 90.0, "radius": 14.0, "size": 33, "damage": 30, "gold": 1,
+	"敵": {"hp": 15.0, "speed": 90.0, "radius": 14.0, "size": 33, "damage": 25, "gold": 1,
 		"color": Color(1.0, 0.45, 0.45)},
-	"鼠": {"hp": 7.5, "speed": 150.0, "radius": 10.0, "size": 22, "damage": 15, "gold": 1,
+	"鼠": {"hp": 7.5, "speed": 150.0, "radius": 10.0, "size": 22, "damage": 10, "gold": 1,
 		"color": Color(0.3, 0.6, 0.35)},
-	"甲": {"hp": 60.0, "speed": 55.0, "radius": 15.0, "size": 33, "damage": 30, "gold": 3,
+	"甲": {"hp": 60.0, "speed": 55.0, "radius": 15.0, "size": 33, "damage": 25, "gold": 3,
 		"color": Color(0.8, 0.3, 0.3)},
-	"弓": {"hp": 22.5, "speed": 80.0, "radius": 14.0, "size": 33, "damage": 15, "gold": 2,
+	"弓": {"hp": 22.5, "speed": 80.0, "radius": 14.0, "size": 33, "damage": 10, "gold": 2,
 		"color": Color(0.65, 0.35, 0.9), "ranged": true},
 	# 鳥：鼠的進階，速度 1.5 倍、血多一點
-	"鳥": {"hp": 10.0, "speed": 225.0, "radius": 10.0, "size": 22, "damage": 15, "gold": 1,
+	"鳥": {"hp": 10.0, "speed": 225.0, "radius": 10.0, "size": 22, "damage": 10, "gold": 1,
 		"color": Color(0.5, 0.9, 0.45)},
 	# 弩：弓的進階，開始放箭的距離是弓的 1.5 倍、血多一點
-	"弩": {"hp": 30.0, "speed": 80.0, "radius": 14.0, "size": 33, "damage": 15, "gold": 3,
+	"弩": {"hp": 30.0, "speed": 80.0, "radius": 14.0, "size": 33, "damage": 10, "gold": 3,
 		"color": Color(0.5, 0.25, 0.85), "ranged": true, "shoot_range": 450.0},
 	# 冑：甲的進階，兩倍血、完全不吃擊退
-	"冑": {"hp": 120.0, "speed": 55.0, "radius": 15.0, "size": 33, "damage": 30, "gold": 5,
+	"冑": {"hp": 120.0, "speed": 55.0, "radius": 15.0, "size": 33, "damage": 25, "gold": 5,
 		"color": Color(0.65, 0.2, 0.2), "knock_resist": 0.0},
 	# 魂：穿牆、左右飄著過來，第一次被打到完全無效（半透明 = 還有無敵）
-	"魂": {"hp": 15.0, "speed": 90.0, "radius": 14.0, "size": 33, "damage": 20, "gold": 2,
+	"魂": {"hp": 15.0, "speed": 90.0, "radius": 14.0, "size": 33, "damage": 15, "gold": 2,
 		"color": Color(0.55, 0.65, 1.0), "ignores_walls": true, "wobble": true, "shield": 1},
 	# 鬼：魂的進階，速度 1.5 倍、無敵三次
-	"鬼": {"hp": 22.5, "speed": 135.0, "radius": 14.0, "size": 33, "damage": 25, "gold": 3,
+	"鬼": {"hp": 22.5, "speed": 135.0, "radius": 14.0, "size": 33, "damage": 20, "gold": 3,
 		"color": Color(0.4, 0.5, 1.0), "ignores_walls": true, "wobble": true, "shield": 3},
 	# 牛：靠近後蓄力，直線衝向蓄力那一刻玩家的位置，衝刺中不吃擊退
-	"牛": {"hp": 45.0, "speed": 70.0, "radius": 16.0, "size": 33, "damage": 30, "gold": 3,
+	"牛": {"hp": 45.0, "speed": 70.0, "radius": 16.0, "size": 33, "damage": 25, "gold": 3,
 		"color": Color(0.75, 0.5, 0.3), "charger": true},
 	# 犇：牛的進階，更大更硬，蓄力時和衝到定點時各炸一圈
-	"犇": {"hp": 90.0, "speed": 65.0, "radius": 22.0, "size": 44, "damage": 40, "gold": 6,
+	"犇": {"hp": 90.0, "speed": 65.0, "radius": 22.0, "size": 44, "damage": 35, "gold": 6,
 		"color": Color(0.85, 0.35, 0.2), "charger": true, "blaster": true},
 }
 # ---------- 王（任何一種敵人的大字版，會穿牆） ----------
@@ -115,7 +115,7 @@ const BOSS_HP_BASE := 600.0           # 王的血量 = 600 × √(小兵血量 �
 const BOSS_SPEED_MULT := 0.78         # 王的速度 = 那種小兵 × 0.78（敵 90 → 70）
 const BOSS_SIZE := 66
 const BOSS_RADIUS := 28.0
-const BOSS_DAMAGE := 50
+const BOSS_DAMAGE := 40
 const BOSS_GOLD := 25
 const BOSS_KNOCK_RESIST := 0.15
 const BOSS_SHIELD_EVERY := 7.0        # 王魂、王鬼：每幾秒重置無敵
@@ -296,7 +296,7 @@ const CHARACTERS := [
 	{"glyph": "刀", "name": "近身斬擊", "desc": "扇形揮砍\n一次砍多個\nShift：跳五格\n落地震殺周圍敵人"},
 ]
 
-enum State { SELECT, PLAYING, LEVEL_UP, DEAD, WON, POWER_UP, PAUSED }
+enum State { SELECT, PLAYING, LEVEL_UP, DEAD, WON, POWER_UP, PAUSED, META }
 
 
 class Bullet:
@@ -489,6 +489,9 @@ var level_cards: UpgradeCards       # 升級卡片畫面
 var touch: TouchControls            # 手機觸控（虛擬搖桿、技/天按鍵）
 var audio: GameAudio                # 音樂與音效
 var pause_menu: PauseMenu           # 暫停畫面（音量設定）
+var meta_menu: MetaMenu             # 局外升級畫面
+var rerolls_left := 0               # 這一局升級時還能重抽幾次
+var tokens_earned := -1             # 這一局拿到幾個 token（結算時算一次）
 var _ignore_click_frame := -1       # 點暫停畫面的「繼續」那一格，不要觸發天罰
 var is_touch := false               # 有觸控螢幕就開手機操作
 var rotate_hint: ColorRect          # 手機直拿時的「請轉橫」提示
@@ -499,6 +502,7 @@ func _ready() -> void:
 	font = _load_pixel_font()
 	Glyph.font = font
 
+	Meta.load_save()
 	audio = GameAudio.new()
 	add_child(audio)
 	audio.play_music("main")
@@ -571,6 +575,9 @@ func _process(delta: float) -> void:
 			return
 		State.PAUSED:
 			_process_pause()
+			return
+		State.META:
+			_process_meta()
 			return
 
 	if Input.is_action_just_pressed("pause"):
@@ -649,6 +656,8 @@ func _setup_input() -> void:
 		"skill": [KEY_SHIFT],
 		"confirm": [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER],  # 選單確定：Space 左手就按得到，Enter 也可以
 		"toggle_mode": [KEY_TAB],    # 選角畫面切換手機／電腦操作
+		"reroll": [KEY_R],           # 升級時重抽
+		"meta": [KEY_U],             # 選角畫面打開局外升級
 		"pause": [KEY_ESCAPE],       # 遊戲中暫停／繼續
 		"mute": [KEY_M],             # 靜音／取消靜音（任何時候都可以）
 	}
@@ -670,6 +679,9 @@ func _setup_input() -> void:
 # ---------- 選角 ----------
 
 func _process_select() -> void:
+	if Input.is_action_just_pressed("meta"):
+		open_meta()
+		return
 	if Input.is_action_just_pressed("toggle_mode"):
 		toggle_touch_mode()
 	if Input.is_action_just_pressed("move_up"):
@@ -696,6 +708,85 @@ func _process_select() -> void:
 		level_cards.visible = false
 		hud_version.visible = false
 		state = State.PLAYING
+		_apply_meta_start()
+
+
+## 開局套用局外升級：一般升級先升好、重抽次數、開局寶箱
+func _apply_meta_start() -> void:
+	var who: String = CHARACTERS[character].glyph
+	for u: Dictionary in UPGRADES:
+		if u.who != "all" and u.who != who:
+			continue
+		for i in Meta.level("up_" + u.id):
+			_apply_upgrade(u.id)
+	rerolls_left = Meta.rerolls()
+	pending_power += Meta.level("chest")
+	_update_hud()
+
+
+# ---------- 局外升級 ----------
+
+func open_meta() -> void:
+	audio.play("ui_ok")
+	state = State.META
+	level_cards.visible = false
+	meta_menu.open(CHARACTERS[character].glyph, is_touch)
+
+
+func close_meta() -> void:
+	audio.play("ui_move")
+	meta_menu.visible = false
+	state = State.SELECT
+	_show_select()
+
+
+func _process_meta() -> void:
+	if Input.is_action_just_pressed("pause") or Input.is_action_just_pressed("meta"):
+		close_meta()
+		return
+	var n := meta_menu.items().size()
+	if Input.is_action_just_pressed("move_up"):
+		meta_menu.cursor = posmod(meta_menu.cursor - 1, n)
+		meta_menu.flash = ""
+		audio.play("ui_move")
+	elif Input.is_action_just_pressed("move_down"):
+		meta_menu.cursor = posmod(meta_menu.cursor + 1, n)
+		meta_menu.flash = ""
+		audio.play("ui_move")
+	elif Input.is_action_just_pressed("confirm"):
+		_meta_buy()
+	meta_menu.queue_redraw()
+
+
+func _meta_buy() -> void:
+	var it: Dictionary = meta_menu.items()[meta_menu.cursor]
+	var cost := Meta.next_cost(it)
+	if cost < 0:
+		meta_menu.flash = "已經滿級了"
+	elif Meta.buy(it):
+		audio.play("level")
+		meta_menu.flash = "%s 升到 Lv%d" % [it.name, Meta.level(it.id)]
+	else:
+		audio.play("block")
+		meta_menu.flash = "token 不夠（需要 %d 個）" % cost
+	meta_menu.queue_redraw()
+
+
+## 手機／滑鼠點局外升級畫面：點一行選它，再點一次升級；點「返回」離開
+func meta_tap(pos: Vector2) -> void:
+	if meta_menu.back_at(pos):
+		close_meta()
+		return
+	var i := meta_menu.row_at(pos)
+	if i < 0:
+		return
+	if i == meta_menu.cursor:
+		_meta_buy()
+	else:
+		meta_menu.cursor = i
+		meta_menu.flash = ""
+		audio.play("ui_move")
+		meta_menu.queue_redraw()
 
 
 func _show_select() -> void:
@@ -710,11 +801,11 @@ func _show_select() -> void:
 	var descs := DIFFICULTIES.map(func(d: Dictionary) -> String: return d.desc)
 	if is_touch:
 		level_cards.show_cards("選擇角色", cards, character, "點卡片選擇，再點一次開始",
-				"操作模式：手機　（點這裡切換成電腦）", TUTORIAL_TIPS_TOUCH)
+				"操作模式：手機　（點這裡切換成電腦）", TUTORIAL_TIPS_TOUCH, "局外升級　token %d" % Meta.tokens)
 		level_cards.set_options("難度", names, difficulty, "點選", descs)
 	else:
-		level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選角色　W S / ↑↓ 選難度　Space / Enter 開始",
-				"操作模式：電腦　（按 Tab 或點這裡切換成手機）", TUTORIAL_TIPS)
+		level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選角色　W S / ↑↓ 選難度　Space / Enter 開始　U 局外升級",
+				"操作模式：電腦　（按 Tab 或點這裡切換成手機）", TUTORIAL_TIPS, "局外升級　token %d" % Meta.tokens)
 		level_cards.set_options("難度", names, difficulty, "W S / ↑↓", descs)
 
 
@@ -2684,10 +2775,32 @@ func _show_level_up() -> void:
 	for u: Dictionary in upgrade_choices:
 		var lv: int = upgrade_levels.get(u.id, 0)
 		cards.append({"icon": u.icon, "name": u.name, "sub": "Lv %d→%d" % [lv, lv + 1], "desc": u.desc})
-	level_cards.show_cards("升級！　級 %d" % level, cards, upgrade_cursor, _pick_hint())
+	var hint := _pick_hint()
+	var button := ""
+	if rerolls_left > 0:
+		button = "重抽　剩 %d 次" % rerolls_left
+		if not is_touch:
+			hint += "　R 重抽"
+	level_cards.show_cards("升級！　級 %d" % level, cards, upgrade_cursor, hint, "", [], button)
+
+
+## 升級時重抽三張卡片（用掉一次重抽）
+func reroll_upgrades() -> void:
+	if state != State.LEVEL_UP or rerolls_left <= 0:
+		return
+	rerolls_left -= 1
+	var pool := _available_upgrades()
+	pool.shuffle()
+	upgrade_choices = pool.slice(0, 3)
+	upgrade_cursor = 0
+	audio.play("chest")
+	_show_level_up()
 
 
 func _process_level_up() -> void:
+	if Input.is_action_just_pressed("reroll"):
+		reroll_upgrades()
+		return
 	var step := 0
 	if Input.is_action_just_pressed("move_left"):
 		step = -1
@@ -2945,6 +3058,13 @@ func _build_hud() -> void:
 	pause_menu.visible = false
 	root.add_child(pause_menu)
 
+	meta_menu = MetaMenu.new()
+	meta_menu.font = font
+	meta_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	meta_menu.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	meta_menu.visible = false
+	root.add_child(meta_menu)
+
 	# 手機模式直拿時畫面太小：蓋一層提示請轉橫（放最上面，連卡片都蓋住）
 	rotate_hint = ColorRect.new()
 	rotate_hint.color = Color(0, 0, 0, 0.9)
@@ -3017,7 +3137,11 @@ func _end(result: State) -> void:
 	if result == State.DEAD:
 		title = "你倒下了"
 		player.set_text("亡")
-	var stats := "難度 %s　存活 %s　級 %d　擊倒 %d　金 %d" % [DIFFICULTIES[difficulty].name, _fmt_time(elapsed), level, kills, gold]
+	if tokens_earned < 0:
+		tokens_earned = Meta.tokens_for_run(elapsed, result == State.WON)
+		Meta.tokens += tokens_earned
+		Meta.save()
+	var stats := "難度 %s　存活 %s　級 %d　擊倒 %d　金 %d　token +%d（共 %d）" % [DIFFICULTIES[difficulty].name, _fmt_time(elapsed), level, kills, gold, tokens_earned, Meta.tokens]
 	# 手機：要點「再來一局」按鈕才重開（避免手指誤觸直接跳過）；電腦維持原本按 Space / Enter
 	if is_touch:
 		level_cards.show_cards(title, _final_level_cards(), -1, "", stats, [], "再來一局")

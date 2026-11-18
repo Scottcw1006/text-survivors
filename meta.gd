@@ -1,0 +1,84 @@
+class_name Meta
+extends RefCounted
+## 局外成長（rogue-like）：token 和局外升級，存在 user://meta.cfg，關掉遊戲再開也還在。
+## - 每玩滿一分鐘拿 1 個 token，一局最多 3 個；打倒最終王再多 2 個
+## - 局外升級：一般升級提前升級（最高 3 級）、重抽次數（最高 2 級）、開局寶箱（最高 2 級）
+
+const PATH := "user://meta.cfg"
+const TOKEN_PER_MINUTE := 1
+const TOKEN_MINUTE_CAP := 3
+const TOKEN_WIN_BONUS := 2
+const BASE_REROLLS := 3
+const REROLL_PER_LEVEL := 3
+
+## 局外升級的項目：id、名稱、最高等級、每一級要幾個 token
+## 一般升級的 id 跟 main.gd 的 UPGRADES 一樣（power、haste…），前面加 "up_"
+const ITEMS := [
+	{"id": "up_power",  "icon": "力", "name": "攻擊力",   "max": 3, "cost": [1, 2, 3]},
+	{"id": "up_haste",  "icon": "疾", "name": "攻擊速度", "max": 3, "cost": [1, 2, 3]},
+	{"id": "up_pierce", "icon": "穿", "name": "穿透",     "max": 3, "cost": [1, 2, 3], "who": "人"},
+	{"id": "up_reach",  "icon": "廣", "name": "斬擊範圍", "max": 3, "cost": [1, 2, 3], "who": "刀"},
+	{"id": "up_speed",  "icon": "速", "name": "移動速度", "max": 3, "cost": [1, 2, 3]},
+	{"id": "up_vital",  "icon": "體", "name": "體魄",     "max": 3, "cost": [1, 2, 3]},
+	{"id": "up_magnet", "icon": "磁", "name": "吸金",     "max": 3, "cost": [1, 2, 3]},
+	{"id": "up_focus",  "icon": "息", "name": "調息",     "max": 3, "cost": [1, 2, 3]},
+	{"id": "reroll",    "icon": "換", "name": "重抽次數 +3", "max": 2, "cost": [1, 1]},
+	{"id": "chest",     "icon": "寶", "name": "開局寶箱",   "max": 2, "cost": [5, 5]},
+]
+
+static var tokens := 0
+static var levels := {}
+static var _loaded := false
+
+
+static func load_save() -> void:
+	if _loaded:
+		return
+	_loaded = true
+	var cfg := ConfigFile.new()
+	if cfg.load(PATH) != OK:
+		return
+	tokens = int(cfg.get_value("meta", "tokens", 0))
+	levels = cfg.get_value("meta", "levels", {})
+
+
+static func save() -> void:
+	var cfg := ConfigFile.new()
+	cfg.set_value("meta", "tokens", tokens)
+	cfg.set_value("meta", "levels", levels)
+	cfg.save(PATH)
+
+
+static func level(id: String) -> int:
+	return int(levels.get(id, 0))
+
+
+## 下一級要幾個 token；已經滿級回傳 -1
+static func next_cost(item: Dictionary) -> int:
+	var lv := level(item.id)
+	if lv >= item.max:
+		return -1
+	return item.cost[lv]
+
+
+## 買下一級，成功回傳 true
+static func buy(item: Dictionary) -> bool:
+	var cost := next_cost(item)
+	if cost < 0 or tokens < cost:
+		return false
+	tokens -= cost
+	levels[item.id] = level(item.id) + 1
+	save()
+	return true
+
+
+## 這一局拿到幾個 token：每滿一分鐘 1 個（最多 3 個），打倒最終王 +2
+static func tokens_for_run(seconds: float, won: bool) -> int:
+	var n := mini(int(seconds / 60.0) * TOKEN_PER_MINUTE, TOKEN_MINUTE_CAP)
+	if won:
+		n += TOKEN_WIN_BONUS
+	return n
+
+
+static func rerolls() -> int:
+	return BASE_REROLLS + REROLL_PER_LEVEL * level("reroll")

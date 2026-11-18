@@ -121,7 +121,7 @@ func _extra_h() -> float:
 	var top := _top_h()
 	var bottom := 80.0
 	if button != "":
-		bottom = 170.0 if hint != "" else 130.0
+		bottom = 195.0 if hint != "" else 130.0
 	return top + bottom
 
 

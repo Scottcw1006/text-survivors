@@ -59,6 +59,8 @@ func _input(event: InputEvent) -> void:
 			return
 		if m.pressed and main.state == main.State.PAUSED:
 			main.pause_tap(m.position)
+		elif m.pressed and main.state == main.State.META:
+			main.meta_tap(m.position)
 		elif m.pressed and not main.is_playing():
 			_menu_tap(MOUSE_FINGER, m.position)
 		elif not m.pressed:
@@ -73,6 +75,9 @@ func _input(event: InputEvent) -> void:
 func _touch_down(finger: int, pos: Vector2) -> void:
 	if main.state == main.State.PAUSED:
 		main.pause_tap(pos)                # 暫停中：點 ← → 調音量、點「繼續」回遊戲
+		return
+	if main.state == main.State.META:
+		main.meta_tap(pos)
 		return
 	if not main.is_playing():
 		_menu_tap(finger, pos)
@@ -100,6 +105,13 @@ func _menu_tap(finger: int, pos: Vector2) -> void:
 	# 選角畫面：點「操作模式」那行切換手機／電腦
 	if main.state == main.State.SELECT and cards.subtitle_rect.has_point(pos):
 		main.toggle_touch_mode()
+		return
+	# 選角畫面：點「局外升級」按鈕；升級畫面：點「重抽」按鈕
+	if cards.cursor >= 0 and cards.button_rect.has_point(pos):
+		if main.state == main.State.SELECT:
+			main.open_meta()
+		elif main.state == main.State.LEVEL_UP:
+			main.reroll_upgrades()
 		return
 	# 選角畫面：點難度
 	if main.state == main.State.SELECT:

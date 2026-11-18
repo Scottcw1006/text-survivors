@@ -128,6 +128,12 @@ const SMITE_RADIUS := 108.0         # 只用來畫中間那圈「罰」
 const COLOR_SMITE := Color(0.75, 0.9, 1.0)
 
 # 寶箱：每 30 秒在附近隨機出現，王死掉也會掉；打開後二選一強化「彈」或「刀」
+const HEAL_INTERVAL := 25.0          # 每幾秒出現一顆補血愛心
+const HEAL_AMOUNT := 20               # 一顆補多少血
+const HEAL_MAX_ON_MAP := 3            # 地圖上最多同時幾顆（沒撿就不再多生）
+const HEAL_MIN_DIST := 200.0
+const HEAL_MAX_DIST := 550.0
+const HEAL_PICK_RANGE := 34.0
 const CHEST_INTERVAL := 30.0
 const CHEST_MIN_DIST := 400.0
 const CHEST_MAX_DIST := 1000.0
@@ -336,6 +342,9 @@ var skill_to := Vector2.ZERO
 var land_grace := 0.0
 var next_boss_time := BOSS_INTERVAL
 var next_chest_time := CHEST_INTERVAL
+var next_heal_time := HEAL_INTERVAL
+var hearts: Array[HeartPickup] = []
+var heart_pointer: HeartPickup      # 最近的愛心在畫面外時，畫面邊緣的提示
 var final_phase := false           # 三分鐘後的決戰：不再掉金、不再出寶箱
 var final_bosses: Array[Enemy] = []
 var final_roster: Array[String] = []  # 決戰一開始有哪些王（照順序），血條用；死掉的從 final_bosses 拿掉
@@ -422,6 +431,14 @@ func _ready() -> void:
 	chest_pointer.z_index = 20
 	chest_pointer.visible = false
 	add_child(chest_pointer)
+
+	heart_pointer = HeartPickup.new()
+	heart_pointer.pulse = false
+	heart_pointer.scale = Vector2(0.7, 0.7)
+	heart_pointer.modulate.a = 0.7
+	heart_pointer.z_index = 20
+	heart_pointer.visible = false
+	add_child(heart_pointer)
 
 	_setup_input()
 	_build_hud()
@@ -1787,6 +1804,50 @@ func _update_chests() -> void:
 			chests.remove_at(i)
 	_update_chest_pointer()
 	_update_boss_pointers()
+	_update_hearts()
+
+
+# ---------- 補血愛心 ----------
+
+func _update_hearts() -> void:
+	if elapsed >= next_heal_time:
+		next_heal_time += HEAL_INTERVAL
+		if hearts.size() < HEAL_MAX_ON_MAP:
+			_spawn_heart()
+	for i in range(hearts.size() - 1, -1, -1):
+		var h := hearts[i]
+		if h.position.distance_to(player.position) < HEAL_PICK_RANGE:
+			hp = mini(hp + HEAL_AMOUNT, max_hp)
+			audio.play("heal")
+			var p := particles.add("+%d" % HEAL_AMOUNT, h.position + Vector2(0, -20), Vector2(0, -60), 0.7, 33, HeartPickup.COLOR)
+			p.drag = 1.5
+			h.queue_free()
+			hearts.remove_at(i)
+	# 邊緣提示：最近的一顆在畫面外時顯示
+	var best: HeartPickup = null
+	var best_d := INF
+	for h in hearts:
+		var d := h.position.distance_squared_to(player.position)
+		if d < best_d:
+			best_d = d
+			best = h
+	var edge := _edge_point(best.position) if best != null else Vector2.INF
+	heart_pointer.visible = edge != Vector2.INF
+	if heart_pointer.visible:
+		heart_pointer.position = edge
+
+
+func _spawn_heart() -> void:
+	for i in 30:
+		var dist := randf_range(HEAL_MIN_DIST, HEAL_MAX_DIST)
+		var cell := terrain.cell_of(player.position + Vector2.from_angle(randf() * TAU) * dist)
+		if terrain.flow_distance(cell) >= 0:
+			var h := HeartPickup.new()
+			h.position = terrain.cell_center(cell)
+			h.z_index = 5
+			add_child(h)
+			hearts.append(h)
+			return
 
 
 ## 找一個附近、不是牆、走得到的位置放寶箱

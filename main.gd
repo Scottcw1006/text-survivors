@@ -491,7 +491,7 @@ var audio: GameAudio                # 音樂與音效
 var pause_menu: PauseMenu           # 暫停畫面（音量設定）
 var meta_menu: MetaMenu             # 局外升級畫面
 var rerolls_left := 0               # 這一局升級時還能重抽幾次
-var tokens_earned := -1             # 這一局拿到幾個 token（結算時算一次）
+var tokens_earned := -1             # 這一局拿到幾個 鑽（結算時算一次）
 var _ignore_click_frame := -1       # 點暫停畫面的「繼續」那一格，不要觸發天罰
 var is_touch := false               # 有觸控螢幕就開手機操作
 var rotate_hint: ColorRect          # 手機直拿時的「請轉橫」提示
@@ -764,16 +764,16 @@ func _process_meta() -> void:
 	meta_menu.queue_redraw()
 
 
-## 全部重置：第一次按只是提醒，再按一次才真的退回全部 token
+## 全部重置：第一次按只是提醒，再按一次才真的退回全部 鑽
 func _meta_reset() -> void:
 	if not meta_menu.reset_armed:
 		meta_menu.reset_armed = true
-		meta_menu.flash = "再按一次確定重置，退回全部 token"
+		meta_menu.flash = "再按一次確定重置，退回全部的鑽"
 		audio.play("block")
 	else:
 		var back := Meta.refund_all()
 		meta_menu.reset_armed = false
-		meta_menu.flash = "已重置，退回 %d 個 token" % back
+		meta_menu.flash = "已重置，退回 %d 個鑽" % back
 		audio.play("chest")
 	meta_menu.queue_redraw()
 
@@ -789,7 +789,7 @@ func _meta_buy() -> void:
 		meta_menu.flash = "%s 升到 Lv%d" % [it.name, Meta.level(it.id)]
 	else:
 		audio.play("block")
-		meta_menu.flash = "token 不夠（需要 %d 個）" % cost
+		meta_menu.flash = "鑽不夠（需要 %d 個）" % cost
 	meta_menu.queue_redraw()
 
 
@@ -825,11 +825,11 @@ func _show_select() -> void:
 	var descs := DIFFICULTIES.map(func(d: Dictionary) -> String: return d.desc)
 	if is_touch:
 		level_cards.show_cards("選擇角色", cards, character, "點卡片選擇，再點一次開始",
-				"操作模式：手機　（點這裡切換成電腦）", TUTORIAL_TIPS_TOUCH, "局外升級　token %d" % Meta.tokens)
+				"操作模式：手機　（點這裡切換成電腦）", TUTORIAL_TIPS_TOUCH, "局外升級　鑽 %d" % Meta.tokens)
 		level_cards.set_options("難度", names, difficulty, "點選", descs)
 	else:
 		level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選角色　W S / ↑↓ 選難度　Space / Enter 開始　U 局外升級",
-				"操作模式：電腦　（按 Tab 或點這裡切換成手機）", TUTORIAL_TIPS, "局外升級　token %d" % Meta.tokens)
+				"操作模式：電腦　（按 Tab 或點這裡切換成手機）", TUTORIAL_TIPS, "局外升級　鑽 %d" % Meta.tokens)
 		level_cards.set_options("難度", names, difficulty, "W S / ↑↓", descs)
 
 
@@ -3165,7 +3165,7 @@ func _end(result: State) -> void:
 		tokens_earned = Meta.tokens_for_run(elapsed, result == State.WON)
 		Meta.tokens += tokens_earned
 		Meta.save()
-	var stats := "難度 %s　存活 %s　級 %d　擊倒 %d　金 %d　token +%d（共 %d）" % [DIFFICULTIES[difficulty].name, _fmt_time(elapsed), level, kills, gold, tokens_earned, Meta.tokens]
+	var stats := "難度 %s　存活 %s　級 %d　擊倒 %d　金 %d　鑽 +%d（共 %d）" % [DIFFICULTIES[difficulty].name, _fmt_time(elapsed), level, kills, gold, tokens_earned, Meta.tokens]
 	# 手機：要點「再來一局」按鈕才重開（避免手指誤觸直接跳過）；電腦維持原本按 Space / Enter
 	if is_touch:
 		level_cards.show_cards(title, _final_level_cards(), -1, "", stats, [], "再來一局")

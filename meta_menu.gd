@@ -1,8 +1,8 @@
 class_name MetaMenu
 extends Control
-## 局外升級畫面（選角畫面進來）：一圈「框」字的面板，一行一個項目，用 token 升級。
+## 局外升級畫面（選角畫面進來）：一圈「框」字的面板，一行一個項目，用 鑽 升級。
 ## 鍵盤：W S 選、Space / Enter 升級、Backspace 全部重置、Esc 或 U 返回。
-## 手機：點一行選它、再點一次升級；點「重置」退回全部 token（要點兩次確認）；點「返回」離開。
+## 手機：點一行選它、再點一次升級；點「重置」退回全部 鑽（要點兩次確認）；點「返回」離開。
 
 const CELL := 20.0
 const COLS := 46
@@ -16,7 +16,7 @@ var font: Font
 var cursor := 0
 var who := "人"                 # 現在選的角色（穿只有人有、廣只有刀有）
 var touch_mode := false
-var flash := ""                 # 剛剛的提示（買到了 / token 不夠）
+var flash := ""                 # 剛剛的提示（買到了 / 鑽不夠）
 var _row_rects: Array[Rect2] = []
 var _back_rect := Rect2()
 var _reset_rect := Rect2()
@@ -68,7 +68,7 @@ func _draw() -> void:
 				_text("框", o + Vector2((cx + 0.5) * CELL, (cy + 0.5) * CELL), 17, COLOR_DIM, true)
 	var mid := o.x + w / 2.0
 	_text("局外升級", Vector2(mid, o.y + 52.0), 44, COLOR_ON, true)
-	_text("token　%d" % Meta.tokens, Vector2(mid, o.y + 100.0), 33, COLOR_PICK, true)
+	_text("鑽　%d" % Meta.tokens, Vector2(mid, o.y + 100.0), 33, COLOR_PICK, true)
 
 	_row_rects.clear()
 	var y := o.y + 160.0
@@ -86,7 +86,7 @@ func _draw() -> void:
 		_text(it.name, Vector2(o.x + 110.0, y), 33, c, false)
 		var bar := "■".repeat(lv) + "□".repeat(it.max - lv)
 		_text(bar, Vector2(o.x + w * 0.62, y), 33, COLOR_MAX if cost < 0 else c, true)
-		var price := "滿級" if cost < 0 else ("%d token" % cost)
+		var price := "滿級" if cost < 0 else ("%d 鑽" % cost)
 		var pc := COLOR_MAX if cost < 0 else (c if Meta.tokens >= cost else Color(1, 0.4, 0.4, 0.8))
 		_text(price, Vector2(o.x + w - 120.0, y), 33, pc, true)
 		y += ROW_H

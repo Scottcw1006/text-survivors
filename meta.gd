@@ -1,7 +1,7 @@
 class_name Meta
 extends RefCounted
-## 局外成長（rogue-like）：token 和局外升級，存在 user://meta.cfg，關掉遊戲再開也還在。
-## - 每玩滿一分鐘拿 1 個 token，一局最多 3 個；打倒最終王再多 2 個
+## 局外成長（rogue-like）：鑽 和局外升級，存在 user://meta.cfg，關掉遊戲再開也還在。
+## - 每玩滿一分鐘拿 1 個 鑽，一局最多 3 個；打倒最終王再多 2 個
 ## - 局外升級：一般升級提前升級（最高 3 級）、重抽次數（最高 2 級）、開局寶箱（最高 2 級）
 
 const PATH := "user://meta.cfg"
@@ -11,7 +11,7 @@ const TOKEN_WIN_BONUS := 2
 const BASE_REROLLS := 3
 const REROLL_PER_LEVEL := 3
 
-## 局外升級的項目：id、名稱、最高等級、每一級要幾個 token
+## 局外升級的項目：id、名稱、最高等級、每一級要幾個 鑽
 ## 一般升級的 id 跟 main.gd 的 UPGRADES 一樣（power、haste…），前面加 "up_"
 const ITEMS := [
 	{"id": "up_power",  "icon": "力", "name": "攻擊力",   "max": 3, "cost": [1, 1, 1]},
@@ -53,7 +53,7 @@ static func level(id: String) -> int:
 	return int(levels.get(id, 0))
 
 
-## 下一級要幾個 token；已經滿級回傳 -1
+## 下一級要幾個 鑽；已經滿級回傳 -1
 static func next_cost(item: Dictionary) -> int:
 	var lv := level(item.id)
 	if lv >= item.max:
@@ -72,7 +72,7 @@ static func buy(item: Dictionary) -> bool:
 	return true
 
 
-## 全部重置：把花掉的 token 全部退回來
+## 全部重置：把花掉的 鑽 全部退回來
 static func refund_all() -> int:
 	var back := 0
 	for it: Dictionary in ITEMS:
@@ -84,7 +84,7 @@ static func refund_all() -> int:
 	return back
 
 
-## 這一局拿到幾個 token：每滿一分鐘 1 個（最多 3 個），打倒最終王 +2
+## 這一局拿到幾個 鑽：每滿一分鐘 1 個（最多 3 個），打倒最終王 +2
 static func tokens_for_run(seconds: float, won: bool) -> int:
 	var n := mini(int(seconds / 60.0) * TOKEN_PER_MINUTE, TOKEN_MINUTE_CAP)
 	if won:

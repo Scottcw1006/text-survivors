@@ -22,6 +22,8 @@ const TIP_COLS := 14
 const TIP_ROWS := 11
 const TIP_GAP := 60.0              # 角色卡和教學卡之間的距離
 const COLOR_TIP := Color(1, 1, 1, 0.7)
+const OPT_COLS := 13               # 難度面板寬幾個框字（高度跟角色卡一樣）
+const COLOR_PICK := Color(1.0, 0.85, 0.4)
 
 var font: Font
 var title := ""
@@ -36,6 +38,7 @@ var opt_label := ""                # 標題下的一排選項（選角的難度�
 var opt_items: Array = []
 var opt_sel := 0
 var opt_hint := ""
+var opt_descs: Array = []          # 每個選項的說明，選中的那個顯示在面板下面
 var opt_rects: Array[Rect2] = []
 var button := ""                   # 卡片下面的按鈕文字（結算的「再來一局」），空字串 = 沒有按鈕
 var button_rect := Rect2()
@@ -54,9 +57,10 @@ func show_cards(t: String, c: Array, selected: int, h: String, sub_title := "", 
 	queue_redraw()
 
 
-## 在標題下面加一排選項（要在 show_cards 之後叫）
-func set_options(label: String, items: Array, selected: int, hint_text: String) -> void:
+## 在卡片右邊加一個直排的選項面板（選角的難度），要在 show_cards 之後叫
+func set_options(label: String, items: Array, selected: int, hint_text: String, descs := []) -> void:
 	opt_label = label
+	opt_descs = descs
 	opt_items = items
 	opt_sel = selected
 	opt_hint = hint_text
@@ -85,10 +89,12 @@ func _layout(width: float) -> Vector3:
 
 
 func _top_h() -> float:
-	var h := 130.0 if subtitle != "" else 90.0
-	if opt_label != "":
-		h += 56.0
-	return h
+	return 130.0 if subtitle != "" else 90.0
+
+
+## 選項面板的寬度（沒有選項 = 0）
+func _panel_w() -> float:
+	return OPT_COLS * CELL if opt_label != "" else 0.0
 
 
 ## 上面標題、下面提示／按鈕要佔多少高度
@@ -107,7 +113,8 @@ func _draw() -> void:
 	while k > 0.3:
 		var lay := _layout(size.x / k)
 		var tips_w := tips.size() * TIP_COLS * CELL + (tips.size() - 1) * GAP
-		if lay.z + _extra_h() <= size.y / k and tips_w + 40.0 <= size.x / k:
+		var row_w := mini(int(lay.x), cards.size()) * (COLS * CELL + GAP) + _panel_w()
+		if lay.z + _extra_h() <= size.y / k and tips_w + 40.0 <= size.x / k and row_w + 40.0 <= size.x / k:
 			break
 		k -= 0.05
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2(k, k))
@@ -124,7 +131,7 @@ func _draw() -> void:
 	var top := _top_h()
 	var y0 := (view.y - total_h - _extra_h()) / 2.0 + top
 
-	var oy := 56.0 if opt_label != "" else 0.0   # 有選項那排，標題再往上移
+	var oy := 0.0
 	if subtitle != "":
 		_text(title, Vector2(view.x / 2.0, y0 - 100.0 - oy), 44, COLOR_ON)
 		_text(subtitle, Vector2(view.x / 2.0, y0 - 48.0 - oy), 33, COLOR_ON)
@@ -133,7 +140,6 @@ func _draw() -> void:
 	else:
 		subtitle_rect = Rect2()
 		_text(title, Vector2(view.x / 2.0, y0 - 56.0 - oy), 44, COLOR_ON)
-	_draw_options(view, y0 - 50.0, k)
 
 	card_rects.clear()
 	for i in n:
@@ -142,7 +148,10 @@ func _draw() -> void:
 		var lifted := cursor >= 0 and i == cursor
 		var row := i / per_row
 		var in_row := mini(per_row, n - row * per_row)
-		var x0 := (view.x - (in_row * card_w + (in_row - 1) * GAP)) / 2.0
+		var row_w := in_row * card_w + (in_row - 1) * GAP
+		if row == 0 and opt_label != "":
+			row_w += GAP + _panel_w()   # 第一排右邊要放難度面板，一起置中
+		var x0 := (view.x - row_w) / 2.0
 		var origin := Vector2(x0 + (i % per_row) * (card_w + GAP), y0 + row * (card_h + GAP) - (LIFT if lifted else 0.0))
 		var mid := origin.x + card_w / 2.0
 
@@ -164,6 +173,14 @@ func _draw() -> void:
 		var max_lines := int((card_h - CELL * 2.0 - 8.0 - desc_top) / DESC_LINE)
 		var desc_pos := Vector2(origin.x + CELL * 2.0 + 4.0, origin.y + desc_top + font.get_ascent(DESC_SIZE))
 		draw_multiline_string(font, desc_pos, c.desc, HORIZONTAL_ALIGNMENT_CENTER, inner_w, DESC_SIZE, max_lines, color)
+
+	# 難度面板：在第一排卡片的右邊
+	opt_rects.clear()
+	if opt_label != "" and n > 0:
+		var first := mini(per_row, n)
+		var first_w := first * card_w + (first - 1) * GAP + GAP + _panel_w()
+		var px := (view.x - first_w) / 2.0 + first * (card_w + GAP)
+		_draw_options(Vector2(px, y0), card_h, k)
 
 	# 教學卡：一排在角色卡下面
 	var tx0 := (view.x - (tips.size() * tip_w + (tips.size() - 1) * GAP)) / 2.0
@@ -197,33 +214,26 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
-## 一排選項：「難度　簡單　〔普通〕　困難　(W S / ↑↓)」，選中的亮、其他暗
-func _draw_options(view: Vector2, cy: float, k: float) -> void:
-	opt_rects.clear()
-	if opt_label == "":
-		return
-	const FS := 33
-	const ITEM_GAP := 30.0
-	var label_w := font.get_string_size(opt_label + "　", HORIZONTAL_ALIGNMENT_LEFT, -1, FS).x
-	var item_ws := []
-	var total := label_w
-	for item: String in opt_items:
-		var w := font.get_string_size("〔%s〕" % item, HORIZONTAL_ALIGNMENT_LEFT, -1, FS).x
-		item_ws.append(w)
-		total += w + ITEM_GAP
-	var hint_w := font.get_string_size(opt_hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x
-	total += hint_w
-	var x := view.x / 2.0 - total / 2.0
-	_text(opt_label, Vector2(x + label_w / 2.0, cy), FS, COLOR_ON)
-	x += label_w
+## 難度面板：一圈框字，裡面直排選項，選中的黃字加〔〕，下面寫選中那個的說明
+func _draw_options(o: Vector2, h: float, k: float) -> void:
+	var w := _panel_w()
+	var rows := int(h / CELL)
+	var mid := o.x + w / 2.0
+	draw_rect(Rect2(o, Vector2(w, h)), Color.BLACK)
+	_frame(o, OPT_COLS, rows, COLOR_TIP)
+	_text(opt_label, Vector2(mid, o.y + PAD + 40.0), 33, COLOR_ON)
+	_text(opt_hint, Vector2(mid, o.y + PAD + 80.0), 22, COLOR_TIP)
+	var y := o.y + PAD + 125.0
 	for i in opt_items.size():
-		var w: float = item_ws[i]
 		var on := i == opt_sel
-		var t: String = ("〔%s〕" if on else "　%s　") % opt_items[i]
-		_text(t, Vector2(x + w / 2.0, cy), FS, Color(1.0, 0.85, 0.4) if on else COLOR_OFF)
-		opt_rects.append(_scaled(Rect2(x - ITEM_GAP / 2.0, cy - 30.0, w + ITEM_GAP, 60.0), k))
-		x += w + ITEM_GAP
-	_text(opt_hint, Vector2(x + hint_w / 2.0, cy), 22, COLOR_TIP)
+		_text(("〔%s〕" if on else "%s") % opt_items[i], Vector2(mid, y), 44 if on else 33, COLOR_PICK if on else COLOR_OFF)
+		opt_rects.append(_scaled(Rect2(o.x + CELL, y - 32.0, w - CELL * 2.0, 64.0), k))
+		y += 56.0
+	if opt_sel < opt_descs.size():
+		var top := y - 10.0
+		var lines := int((o.y + h - CELL * 2.0 - top) / DESC_LINE)
+		var p := Vector2(o.x + CELL * 2.0, top + font.get_ascent(DESC_SIZE))
+		draw_multiline_string(font, p, opt_descs[opt_sel], HORIZONTAL_ALIGNMENT_CENTER, w - CELL * 4.0, DESC_SIZE, lines, COLOR_TIP)
 
 
 func _scaled(r: Rect2, k: float) -> Rect2:

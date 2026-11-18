@@ -569,21 +569,25 @@ func _show_select() -> void:
 		var desc: String = c.desc.replace("Shift", "技") if is_touch else c.desc
 		cards.append({"icon": c.glyph, "name": c.name, "sub": "", "desc": desc})
 	var names := DIFFICULTIES.map(func(d: Dictionary) -> String: return d.name)
+	var descs := DIFFICULTIES.map(func(d: Dictionary) -> String: return d.desc)
 	if is_touch:
 		level_cards.show_cards("選擇角色", cards, character, "點卡片選擇，再點一次開始",
 				"操作模式：手機　（點這裡切換成電腦）", TUTORIAL_TIPS_TOUCH)
-		level_cards.set_options("難度", names, difficulty, "點選")
+		level_cards.set_options("難度", names, difficulty, "點選", descs)
 	else:
 		level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選角色　W S / ↑↓ 選難度　Space / Enter 開始",
 				"操作模式：電腦　（按 Tab 或點這裡切換成手機）", TUTORIAL_TIPS)
-		level_cards.set_options("難度", names, difficulty, "W S / ↑↓")
+		level_cards.set_options("難度", names, difficulty, "W S / ↑↓", descs)
 
 
 ## 難度：hp = 怪物血量倍率、count = 怪物數量倍率、speed = 移動速度倍率、banned = 不會出現的怪
 const DIFFICULTIES := [
-	{"name": "簡單", "hp": 0.5, "count": 0.5, "speed": 0.7, "banned": ["鳥", "冑", "弩", "魂", "鬼"]},
-	{"name": "普通", "hp": 1.0, "count": 1.0, "speed": 1.0, "banned": []},
-	{"name": "困難", "hp": 1.5, "count": 1.2, "speed": 1.2, "banned": []},
+	{"name": "簡單", "hp": 0.5, "count": 0.5, "speed": 0.7, "banned": ["鳥", "冑", "弩", "魂", "鬼"],
+		"desc": "怪物血量、數量減半，速度 70%，不會出現鳥冑弩魂鬼"},
+	{"name": "普通", "hp": 1.0, "count": 1.0, "speed": 1.0, "banned": [],
+		"desc": "標準難度"},
+	{"name": "困難", "hp": 1.5, "count": 1.2, "speed": 1.2, "banned": [],
+		"desc": "怪物血量 +50%，數量、速度 +20%"},
 ]
 
 

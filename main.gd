@@ -266,7 +266,7 @@ const POWER_INFO := {
 			"分身傷害\n提高到 100%",
 			"繼承本體：\n分身使用本體的\n攻擊力與招式\n（刀法、斬擊波、\n落地震）"]},
 		"彈": {"name": "斬擊波", "desc": ["",
-			"斬擊波：\n自動射出斬擊波，\n飛 8 格，\n可穿透 2 個敵人",
+			"斬擊波：\n自動射出斬擊波，\n飛 8 格，\n可穿透 2 個敵人\n（「廣」每級 +1）",
 			"大斬擊波：\n兩倍大",
 			"四方斬擊：\n同時往四個方向\n射出大斬擊波",
 			"四連斬擊：\n快速連射 4 道\n大斬擊波，\n飛 15 格，鎖定\n最近 4 個敵人",
@@ -283,7 +283,7 @@ const UPGRADES := [
 	{"id": "power",  "icon": "力", "name": "攻擊力",   "desc": "傷害 +20%", "who": "all"},
 	{"id": "haste",  "icon": "疾", "name": "攻擊速度", "desc": "攻擊速度 +15%", "who": "all"},
 	{"id": "pierce", "icon": "穿", "name": "穿透",     "desc": "子彈多穿過\n1 個敵人；\n砲傷害 +25%", "who": "人"},
-	{"id": "reach",  "icon": "廣", "name": "斬擊範圍", "desc": "斬擊距離 +20%", "who": "刀"},
+	{"id": "reach",  "icon": "廣", "name": "斬擊範圍", "desc": "斬擊距離 +20%；\n斬擊波多穿過\n1 個敵人", "who": "刀"},
 	{"id": "speed",  "icon": "速", "name": "移動速度", "desc": "移動速度 +12%", "who": "all"},
 	{"id": "vital",  "icon": "體", "name": "體魄",     "desc": "每秒回 0.1 血", "who": "all"},
 	{"id": "magnet", "icon": "磁", "name": "吸金",     "desc": "吸金範圍 +35%", "who": "all"},
@@ -756,7 +756,10 @@ func _apply_meta_start() -> void:
 	for u: Dictionary in UPGRADES:
 		if u.who != "all" and u.who != who:
 			continue
-		for i in Meta.level("up_" + u.id):
+		var key: String = "up_" + u.id
+		if u.id == "pierce" or u.id == "reach":
+			key = "up_pierce_reach"   # 穿、廣共用同一項鑽石升級
+		for i in Meta.level(key):
 			_apply_upgrade(u.id)
 	rerolls_left = Meta.rerolls()
 	pending_power += Meta.level("chest")
@@ -2191,6 +2194,7 @@ func _launch_wave(angle: float, big: bool, reach: float, speed: float) -> void:
 	w.node.font_size = WaveFx.BIG_SIZE if big else WaveFx.FONT_SIZE
 	w.node.position = atk_from + w.dir * 20.0
 	w.scale = atk_scale
+	w.pierce = WAVE_PIERCE + int(upgrade_levels.get("reach", 0))   # 「廣」每級多穿 1 個
 	w.node.rotation = angle
 	w.node.z_index = 5
 	add_child(w.node)

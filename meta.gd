@@ -16,8 +16,8 @@ const REROLL_PER_LEVEL := 3
 const ITEMS := [
 	{"id": "up_power",  "icon": "力", "name": "攻擊力",   "max": 3, "cost": [1, 1, 1]},
 	{"id": "up_haste",  "icon": "疾", "name": "攻擊速度", "max": 3, "cost": [1, 1, 1]},
-	{"id": "up_pierce", "icon": "穿", "name": "穿透",     "max": 3, "cost": [1, 1, 1], "who": "人"},
-	{"id": "up_reach",  "icon": "廣", "name": "斬擊範圍", "max": 3, "cost": [1, 1, 1], "who": "刀"},
+	# 穿／廣：同一項，人開局升「穿」、刀開局升「廣」
+	{"id": "up_pierce_reach", "icon": "穿", "name": "穿透／斬擊範圍", "max": 3, "cost": [1, 1, 1]},
 	{"id": "up_speed",  "icon": "速", "name": "移動速度", "max": 3, "cost": [1, 1, 1]},
 	{"id": "up_vital",  "icon": "體", "name": "體魄",     "max": 3, "cost": [1, 1, 1]},
 	{"id": "up_magnet", "icon": "磁", "name": "吸金",     "max": 3, "cost": [1, 1, 1]},
@@ -40,6 +40,15 @@ static func load_save() -> void:
 		return
 	tokens = int(cfg.get_value("meta", "tokens", 0))
 	levels = cfg.get_value("meta", "levels", {})
+	# 舊存檔：穿、廣原本分開，合併成一項（取比較高的那個，另一個退回鑽）
+	if levels.has("up_pierce") or levels.has("up_reach"):
+		var a := int(levels.get("up_pierce", 0))
+		var b := int(levels.get("up_reach", 0))
+		levels["up_pierce_reach"] = maxi(maxi(a, b), int(levels.get("up_pierce_reach", 0)))
+		tokens += mini(a, b)
+		levels.erase("up_pierce")
+		levels.erase("up_reach")
+		save()
 
 
 static func save() -> void:

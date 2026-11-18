@@ -82,7 +82,10 @@ func _draw() -> void:
 		if on:
 			draw_rect(r, Color(1, 1, 1, 0.08))
 		_row_rects.append(_scaled(r, k))
-		_text(it.icon, Vector2(o.x + 70.0, y), 33, c, true)
+		var icon: String = it.icon
+		if it.id == "up_pierce_reach":
+			icon = "廣" if who == "刀" else "穿"   # 刀看到的是「廣」，人看到的是「穿」
+		_text(icon, Vector2(o.x + 70.0, y), 33, c, true)
 		_text(it.name, Vector2(o.x + 110.0, y), 33, c, false)
 		var bar := "■".repeat(lv) + "□".repeat(it.max - lv)
 		_text(bar, Vector2(o.x + w * 0.62, y), 33, COLOR_MAX if cost < 0 else c, true)

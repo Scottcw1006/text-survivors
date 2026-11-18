@@ -482,6 +482,10 @@ var hud_boss: Label                 # 決戰時上方的最終王血條
 var hud_version: Label              # 選角畫面右下角的版本號
 var hud_final_hint: Label           # 決戰開始時畫面中上方的「打倒全部最終王！」
 var final_hint_time := 0.0          # 提示還要顯示幾秒
+var final_intro := 0.0              # 最終決戰開場停頓還剩幾秒
+var celebrate := 0.0                # 過關煙火還剩幾秒
+var firework_cd := 0.0
+var big_banner: Label               # 畫面正中間的大字（最終決戰、過關）
 var hud_kills: Label
 var menu: Control                  # 選角 / 升級 / 結束畫面共用
 var menu_label: Label
@@ -506,6 +510,7 @@ func _ready() -> void:
 	audio = GameAudio.new()
 	add_child(audio)
 	audio.play_music("main")
+	audio._stream("res://audio/music_final.wav")   # 先載入決戰音樂，三分鐘時才不會卡
 
 	terrain = Terrain.new()
 	terrain.font = font
@@ -584,6 +589,17 @@ func _process(delta: float) -> void:
 		_set_paused(true)
 		return
 
+	# 最終決戰開場：全部停住 2 秒，畫面中間「最終決戰」
+	if final_intro > 0.0:
+		final_intro -= delta
+		if final_intro <= 0.0:
+			big_banner.visible = false
+		return
+	# 打倒最終王：放 3 秒煙火再進結算
+	if celebrate > 0.0:
+		_update_celebration(delta)
+		return
+
 	if hitstop > 0.0:
 		hitstop -= delta
 		return
@@ -598,7 +614,7 @@ func _process(delta: float) -> void:
 	if not final_phase and elapsed >= GAME_DURATION:
 		_start_final_phase()
 	if final_phase and final_bosses.is_empty():
-		_end(State.WON)
+		_start_celebration()
 		return
 
 	if player.offset != Vector2.ZERO:
@@ -1217,8 +1233,9 @@ func _start_final_phase() -> void:
 		boss.queue_redraw()
 		final_bosses.append(boss)
 		final_roster.append(boss.label)
-	var banner := particles.add("決戰", player.position + Vector2(0, -120), Vector2(0, -20), 2.0, 66, COLOR_ENEMY_BOSS)
-	banner.grow = 0.2
+	# 停 2 秒，畫面中間大大的「最終決戰」（也順便蓋掉生成最終王的卡頓）
+	final_intro = FINAL_INTRO_TIME
+	_show_big_banner("最終決戰", COLOR_ENEMY_BOSS)
 	_shake(12.0)
 	final_hint_time = FINAL_HINT_TIME
 
@@ -2700,6 +2717,66 @@ func _edge_point(target: Vector2, margin := 40.0) -> Vector2:
 
 
 const FINAL_HINT_TIME := 4.0        # 決戰開始的提示顯示幾秒
+const FINAL_INTRO_TIME := 2.0       # 最終決戰開場停幾秒
+const CELEBRATE_TIME := 3.0         # 過關煙火放幾秒
+const FIREWORK_GAP := 0.22          # 每隔幾秒放一朵
+const FIREWORK_COLORS := [Color(1.0, 0.4, 0.4), Color(1.0, 0.85, 0.3), Color(0.5, 0.9, 1.0),
+		Color(0.6, 1.0, 0.5), Color(0.9, 0.55, 1.0), Color(1.0, 0.6, 0.85)]
+
+
+func _show_big_banner(text: String, color: Color) -> void:
+	big_banner.text = text
+	big_banner.add_theme_color_override("font_color", color)
+	big_banner.visible = true
+
+
+## 打倒最終王：剩下的敵人全部碎掉、主角無敵，放 3 秒煙火
+func _start_celebration() -> void:
+	celebrate = CELEBRATE_TIME
+	firework_cd = 0.0
+	for e: Enemy in enemies.duplicate():
+		_shatter(e)
+		enemies.erase(e)
+		e.queue_free()
+	for b in arrows:
+		b.node.queue_free()
+	arrows.clear()
+	hud_boss.visible = false
+	hud_final_hint.visible = false
+	final_frame.visible = false
+	hud_time.text = "過關"
+	for ptr in boss_pointers:
+		ptr.visible = false
+	audio.stop_music()
+	audio.play("win")
+	_show_big_banner("過關！", Color(1.0, 0.85, 0.4))
+
+
+func _update_celebration(delta: float) -> void:
+	celebrate -= delta
+	firework_cd -= delta
+	if firework_cd <= 0.0:
+		firework_cd = FIREWORK_GAP
+		_firework()
+	if celebrate <= 0.0:
+		big_banner.visible = false
+		_end(State.WON)
+
+
+## 一朵煙火：在畫面裡隨機一個地方，一圈彩色的「＊」往外炸開再慢慢淡掉
+func _firework() -> void:
+	var half := get_viewport_rect().size * 0.4
+	var c := player.position + Vector2(randf_range(-half.x, half.x), randf_range(-half.y, half.y * 0.6))
+	var color: Color = FIREWORK_COLORS.pick_random()
+	var n := 18
+	var speed := randf_range(220.0, 320.0)
+	for i in n:
+		var dir := Vector2.from_angle(TAU * i / n + randf_range(-0.1, 0.1))
+		var p := particles.add("＊" if i % 2 == 0 else "．", c, dir * speed, randf_range(0.9, 1.3), 33, color)
+		p.drag = 1.8
+	var core := particles.add("火", c, Vector2.ZERO, 0.3, 44, Color.WHITE)
+	core.grow = 2.0
+	audio.play("cannon", 0.2)
 
 
 ## 決戰時上方顯示每一隻最終王的血條（打倒的顯示「擊倒」），讓玩家知道要把它們全部打倒
@@ -3004,6 +3081,16 @@ func _build_hud() -> void:
 	hud_boss.visible = false
 	root.add_child(hud_boss)
 
+	big_banner = Label.new()
+	big_banner.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	big_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	big_banner.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	big_banner.add_theme_font_size_override("font_size", 165)
+	big_banner.add_theme_constant_override("outline_size", 24)
+	big_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	big_banner.visible = false
+	root.add_child(big_banner)
+
 	hud_final_hint = Label.new()
 	hud_final_hint.text = "打倒全部最終王！"
 	hud_final_hint.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -3142,7 +3229,7 @@ func _update_hud() -> void:
 		hud_time.add_theme_color_override("font_color", COLOR_ENEMY_BOSS)
 		_update_boss_bars()
 		# 「打倒全部最終王！」顯示幾秒，最後一秒淡出
-		hud_final_hint.visible = final_hint_time > 0.0
+		hud_final_hint.visible = final_hint_time > 0.0 and final_intro <= 0.0   # 「最終決戰」大字出現時先不顯示
 		hud_final_hint.modulate.a = clampf(final_hint_time, 0.0, 1.0)
 		final_frame.visible = true
 		final_frame.queue_redraw()

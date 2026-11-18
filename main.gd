@@ -1242,7 +1242,7 @@ func _start_final_phase() -> void:
 		if pos == Vector2.INF:
 			pos = player.position + Vector2.from_angle(TAU * i / total) * get_viewport_rect().size.x * 0.55
 		var big := i == total - 1
-		var boss := _spawn_boss(bigs.pick_random() if big else _pick_enemy_type(), pos, big)
+		var boss := _spawn_boss(bigs.pick_random() if big else _pick_boss_type(), pos, big)
 		boss.font_size = int(roundf(boss.font_size * FINAL_SIZE_MULT / 11.0)) * 11
 		boss.radius *= FINAL_SIZE_MULT
 		boss.max_hp *= FINAL_HP_MULT
@@ -1271,7 +1271,7 @@ func _spawn_enemies(delta: float) -> void:
 		next_boss_time += BOSS_INTERVAL
 		var bp := _find_spawn_point()
 		if bp != Vector2.INF:
-			_spawn_boss(_pick_enemy_type(), bp, false)
+			_spawn_boss(_pick_boss_type(), bp, false)
 			audio.play("boss")
 
 	spawn_cd -= delta
@@ -1353,6 +1353,17 @@ func _spawn_boss(kind: String, pos: Vector2, big: bool) -> Enemy:
 	add_child(e)
 	enemies.append(e)
 	return e
+
+
+## 王是哪一種：跟小兵一樣抽，但兩分鐘以後（第二隻王、決戰）不會是最普通的「敵」
+func _pick_boss_type() -> String:
+	var kind := _pick_enemy_type()
+	if elapsed >= BOSS_INTERVAL * 2.0 - 1.0:
+		for i in 50:
+			if kind != "敵":
+				break
+			kind = _pick_enemy_type()
+	return kind
 
 
 ## 越後面出現的種類越多
@@ -2744,9 +2755,9 @@ func _edge_point(target: Vector2, margin := 40.0) -> Vector2:
 
 
 const FINAL_HINT_TIME := 4.0        # 決戰開始的提示顯示幾秒
-const FINAL_INTRO_TIME := 2.0       # 最終決戰開場停幾秒
+const FINAL_INTRO_TIME := 2.8       # 最終決戰開場停幾秒
 const INTRO_TEXT := "最終決戰"
-const INTRO_CHAR_GAP := 0.35        # 每隔幾秒多跳出一個字（4 個字 1.05 秒出完，再停一下）
+const INTRO_CHAR_GAP := 0.5         # 每隔幾秒多跳出一個字（4 個字 1.5 秒出完，再停一下）
 const CELEBRATE_TIME := 3.0         # 過關煙火放幾秒
 const FIREWORK_GAP := 0.22          # 每隔幾秒放一朵
 const FIREWORK_COLORS := [Color(1.0, 0.4, 0.4), Color(1.0, 0.85, 0.3), Color(0.5, 0.9, 1.0),

@@ -24,6 +24,8 @@ const TIP_GAP := 60.0              # 角色卡和教學卡之間的距離
 const COLOR_TIP := Color(1, 1, 1, 0.7)
 const OPT_COLS := 13               # 難度面板寬幾個框字（高度跟角色卡一樣）
 const COLOR_PICK := Color(1.0, 0.85, 0.4)
+const SIDE_COLS := 12              # 統計面板寬幾個框字
+const SIDE_ROW := 44.0             # 統計每一行的高度
 
 var font: Font
 var title := ""
@@ -40,6 +42,8 @@ var opt_sel := 0
 var opt_hint := ""
 var opt_descs: Array = []          # 每個選項的說明，選中的那個顯示在面板下面
 var opt_rects: Array[Rect2] = []
+var side_title := ""               # 卡片右邊的統計面板（結算的擊倒數），空字串 = 沒有
+var side_rows: Array = []          # [{glyph, color, text}]
 var button := ""                   # 卡片下面的按鈕文字（結算的「再來一局」），空字串 = 沒有按鈕
 var button_rect := Rect2()
 
@@ -48,6 +52,7 @@ func show_cards(t: String, c: Array, selected: int, h: String, sub_title := "", 
 	title = t
 	button = button_text
 	opt_label = ""
+	side_title = ""
 	tips = tip_cards
 	subtitle = sub_title
 	cards = c
@@ -67,6 +72,17 @@ func set_options(label: String, items: Array, selected: int, hint_text: String, 
 	queue_redraw()
 
 
+## 在卡片右邊加一個統計面板（要在 show_cards 之後叫）
+func set_side(t: String, rows: Array) -> void:
+	side_title = t
+	side_rows = rows
+	queue_redraw()
+
+
+func _side_w() -> float:
+	return SIDE_COLS * CELL + GAP if side_title != "" else 0.0
+
+
 ## 點到第幾個選項，沒點到回傳 -1
 func option_at(pos: Vector2) -> int:
 	for i in opt_rects.size():
@@ -79,9 +95,12 @@ func option_at(pos: Vector2) -> int:
 func _layout(width: float) -> Vector3:
 	var card_w := COLS * CELL
 	var card_h := ROWS * CELL
-	var per_row := maxi(1, int((width - 80.0 + GAP) / (card_w + GAP)))
+	var per_row := maxi(1, int((width - _side_w() - 80.0 + GAP) / (card_w + GAP)))
 	var rows := ceili(float(cards.size()) / per_row)
 	var cards_h := rows * card_h + (rows - 1) * GAP
+	# 統計面板的行數多的話，面板會比卡片高
+	if side_title != "":
+		cards_h = maxf(cards_h, 100.0 + side_rows.size() * SIDE_ROW + CELL * 2.0)
 	var total_h := cards_h
 	if not tips.is_empty():
 		total_h += TIP_GAP + TIP_ROWS * CELL
@@ -152,6 +171,11 @@ func _draw() -> void:
 		if row == 0 and opt_label != "":
 			row_w += GAP + _panel_w()   # 第一排右邊要放難度面板，一起置中
 		var x0 := (view.x - row_w) / 2.0
+		if side_title != "":
+			# 右邊有統計面板：卡片區和面板一起置中，每一排在卡片區裡置中
+			var area_w := mini(per_row, n) * card_w + (mini(per_row, n) - 1) * GAP
+			var base := (view.x - area_w - _side_w()) / 2.0
+			x0 = base + (area_w - row_w) / 2.0
 		var origin := Vector2(x0 + (i % per_row) * (card_w + GAP), y0 + row * (card_h + GAP) - (LIFT if lifted else 0.0))
 		var mid := origin.x + card_w / 2.0
 
@@ -173,6 +197,12 @@ func _draw() -> void:
 		var max_lines := int((card_h - CELL * 2.0 - 8.0 - desc_top) / DESC_LINE)
 		var desc_pos := Vector2(origin.x + CELL * 2.0 + 4.0, origin.y + desc_top + font.get_ascent(DESC_SIZE))
 		draw_multiline_string(font, desc_pos, c.desc, HORIZONTAL_ALIGNMENT_CENTER, inner_w, DESC_SIZE, max_lines, color)
+
+	# 統計面板：在所有卡片的右邊
+	if side_title != "" and n > 0:
+		var area_w := mini(per_row, n) * card_w + (mini(per_row, n) - 1) * GAP
+		var px := (view.x - area_w - _side_w()) / 2.0 + area_w + GAP
+		_draw_side(Vector2(px, y0), cards_h)
 
 	# 難度面板：在第一排卡片的右邊
 	opt_rects.clear()
@@ -234,6 +264,24 @@ func _draw_options(o: Vector2, h: float, k: float) -> void:
 		var lines := int((o.y + h - CELL * 2.0 - top) / DESC_LINE)
 		var p := Vector2(o.x + CELL * 2.0, top + font.get_ascent(DESC_SIZE))
 		draw_multiline_string(font, p, opt_descs[opt_sel], HORIZONTAL_ALIGNMENT_CENTER, w - CELL * 4.0, DESC_SIZE, lines, COLOR_TIP)
+
+
+## 統計面板：一圈框字，標題，下面每行「敵人的字（原本顏色）　× 數量」
+func _draw_side(o: Vector2, h: float) -> void:
+	var w := SIDE_COLS * CELL
+	var rows := int(h / CELL)
+	draw_rect(Rect2(o, Vector2(w, rows * CELL)), Color.BLACK)
+	_frame(o, SIDE_COLS, rows, COLOR_TIP)
+	var mid := o.x + w / 2.0
+	_text(side_title, Vector2(mid, o.y + 56.0), 33, COLOR_ON)
+	var y := o.y + 110.0
+	for r: Dictionary in side_rows:
+		if r.glyph != "":
+			_text(r.glyph, Vector2(o.x + 72.0, y), 33, r.color)
+			_text(r.text, Vector2(o.x + 160.0, y), 33, COLOR_ON)
+		else:
+			_text(r.text, Vector2(mid, y), 22, COLOR_TIP)
+		y += SIDE_ROW
 
 
 func _scaled(r: Rect2, k: float) -> Rect2:

@@ -294,6 +294,7 @@ var state := State.SELECT
 var character := 0
 var elapsed := 0.0
 var kills := 0
+var kills_by_kind := {}              # 每種敵人各打倒幾隻（結算畫面用）
 var gold := 0
 var hp := PLAYER_MAX_HP
 var level := 1
@@ -1187,6 +1188,7 @@ func _kill_enemy(e: Enemy) -> void:
 		return
 	enemies.erase(e)
 	final_bosses.erase(e)   # 決戰的王死了就從清單拿掉
+	kills_by_kind[e.kind] = kills_by_kind.get(e.kind, 0) + 1
 	audio.play("explode" if e.is_boss else "kill")
 	var cell: Array = grid.get(_cell(e.position), [])
 	cell.erase(e)
@@ -2439,6 +2441,19 @@ func _end(result: State) -> void:
 		level_cards.show_cards(title, _final_level_cards(), -1, "", stats, [], "再來一局")
 	else:
 		level_cards.show_cards(title, _final_level_cards(), -1, "按 Space / Enter 再來一局", stats)
+	level_cards.set_side("擊倒", _kill_rows())
+
+
+## 結算畫面右邊的擊倒統計：照 ENEMY_TYPES 的順序，只列有打倒的種類
+func _kill_rows() -> Array:
+	var rows := []
+	for kind: String in ENEMY_TYPES:
+		var count: int = kills_by_kind.get(kind, 0)
+		if count > 0:
+			rows.append({"glyph": kind, "color": ENEMY_TYPES[kind]["color"], "text": "× %d" % count})
+	if rows.is_empty():
+		rows.append({"glyph": "", "color": Color.WHITE, "text": "一隻都沒有"})
+	return rows
 
 
 ## 結算畫面的卡片：兩條強化線，加上每一個升過的金升級

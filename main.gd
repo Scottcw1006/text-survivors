@@ -119,6 +119,7 @@ const BOSS_DAMAGE := 50
 const BOSS_GOLD := 25
 const BOSS_KNOCK_RESIST := 0.15
 const BOSS_SHIELD_EVERY := 7.0        # 王魂、王鬼：每幾秒重置無敵
+const BOSS_TWEAK := {"鳥": 0.85}      # 個別種類的王再乘的倍率（血量、速度都乘）：王鳥太快太硬
 const BIG_HP_MULT := 1.5              # 「大」字王比一般的王多 50% 血
 const BIG_SIZE := 55
 const BIG_RADIUS := 34.0
@@ -1160,6 +1161,9 @@ func _spawn_boss(kind: String, pos: Vector2, big: bool) -> Enemy:
 	var t: Dictionary = ENEMY_TYPES[kind].duplicate()
 	t["hp"] = BOSS_HP_BASE * sqrt(t["hp"] / 15.0) * (BIG_HP_MULT if big else 1.0)   # 開根號：差距不會太大
 	t["speed"] = t["speed"] * BOSS_SPEED_MULT
+	var tweak: float = BOSS_TWEAK.get(kind, 1.0)
+	t["hp"] = t["hp"] * tweak
+	t["speed"] = t["speed"] * tweak
 	t["size"] = BIG_SIZE if big else BOSS_SIZE
 	t["radius"] = BIG_RADIUS if big else BOSS_RADIUS
 	t["damage"] = BOSS_DAMAGE
@@ -1690,11 +1694,32 @@ func _explode(pos: Vector2, radius: float, dmg: float, big: bool) -> void:
 ## 朝最近的敵人揮刀。刀法等級決定這一次攻擊是幾連擊、什麼形狀
 ##   Lv1 正常斬　Lv2 連斬　Lv3 三連斬　Lv4 雙刀連斬（剪刀合 → 開，共四刀）　Lv5 殘影斬（270°、殘留 0.5 秒）
 func _slash() -> void:
+	# 刀法 Lv3 以上能砍矢：有矢飛進斬擊範圍，就優先往矢砍（擋箭比打怪重要）
+	var arrow := _incoming_arrow(slash_range) if blade_lv >= 3 else Vector2.INF
+	if arrow != Vector2.INF:
+		attack_cd = SLASH_INTERVAL * attack_mult
+		_slash_at(arrow)
+		return
 	var target := _nearest_visible_enemy(slash_range + 14.0)
 	if target == null:
 		return
 	attack_cd = SLASH_INTERVAL * attack_mult
-	_slash_at(target)
+	_slash_at(target.position)
+
+
+## 斬擊範圍內、正在往主角飛過來的最近一支矢的位置；沒有就回傳 INF
+func _incoming_arrow(reach: float) -> Vector2:
+	var best := Vector2.INF
+	var best_d := INF
+	for b in arrows:
+		var to := player.position - b.node.position
+		var d := to.length()
+		if d > reach + 20.0 or b.vel.dot(to) <= 0.0:
+			continue
+		if d < best_d:
+			best_d = d
+			best = b.node.position
+	return best
 
 
 # ---------- 刀＋影 ----------
@@ -1773,7 +1798,7 @@ func _shade_attack(sh: Shade, delta: float) -> void:
 				sh.cd = SLASH_INTERVAL
 				var keep := slash_range
 				slash_range = SLASH_RANGE
-				_slash_at(target)
+				_slash_at(target.position)
 				slash_range = keep
 			else:
 				# Lv1～4：單純一刀，用基本範圍和基本傷害
@@ -1799,9 +1824,9 @@ func _shade_attack(sh: Shade, delta: float) -> void:
 
 
 ## 照刀法等級打出一整套斬擊（主角或 Lv5 影分身都用這個，出手位置是 atk_from）
-func _slash_at(target: Enemy) -> void:
+func _slash_at(target: Vector2) -> void:
 	audio.play("slash")
-	var facing := (target.position - atk_from).angle()
+	var facing := (target - atk_from).angle()
 	var big := slash_range + COMBO_GROW
 
 	match blade_lv:

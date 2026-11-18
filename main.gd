@@ -107,11 +107,11 @@ const ENEMY_TYPES := {
 	"牛": {"hp": 45.0, "speed": 70.0, "radius": 16.0, "size": 33, "damage": 30, "gold": 3,
 		"color": Color(0.75, 0.5, 0.3), "charger": true},
 	# 犇：牛的進階，更大更硬，蓄力時和衝到定點時各炸一圈
-	"犇": {"hp": 120.0, "speed": 65.0, "radius": 22.0, "size": 44, "damage": 40, "gold": 6,
+	"犇": {"hp": 90.0, "speed": 65.0, "radius": 22.0, "size": 44, "damage": 40, "gold": 6,
 		"color": Color(0.85, 0.35, 0.2), "charger": true, "blaster": true},
 }
 # ---------- 王（任何一種敵人的大字版，會穿牆） ----------
-const BOSS_HP_RATIO := 40.0           # 王的血量 = 那種小兵的血量 × 40（敵 15 → 600）
+const BOSS_HP_BASE := 600.0           # 王的血量 = 600 × √(小兵血量 ÷ 15)：敵 600、甲 1200、冑 1697、鼠 424
 const BOSS_SPEED_MULT := 0.78         # 王的速度 = 那種小兵 × 0.78（敵 90 → 70）
 const BOSS_SIZE := 66
 const BOSS_RADIUS := 28.0
@@ -1158,7 +1158,7 @@ func _find_spawn_point() -> Vector2:
 ## 生一隻王：kind 種敵人的大字版，行為一樣、但會穿牆。big = 決戰的「大」字王（血 +50%、各有特殊技）
 func _spawn_boss(kind: String, pos: Vector2, big: bool) -> Enemy:
 	var t: Dictionary = ENEMY_TYPES[kind].duplicate()
-	t["hp"] = t["hp"] * BOSS_HP_RATIO * (BIG_HP_MULT if big else 1.0)
+	t["hp"] = BOSS_HP_BASE * sqrt(t["hp"] / 15.0) * (BIG_HP_MULT if big else 1.0)   # 開根號：差距不會太大
 	t["speed"] = t["speed"] * BOSS_SPEED_MULT
 	t["size"] = BIG_SIZE if big else BOSS_SIZE
 	t["radius"] = BIG_RADIUS if big else BOSS_RADIUS

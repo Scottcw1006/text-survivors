@@ -82,10 +82,14 @@ def mix_into(buf, start, samples, vol=1.0):
         buf[j] += s * vol
 
 
-def save(name, buf, peak=0.9):
+def save(name, buf, peak=0.9, rms=None):
+    """rms：指定平均音量（兩首音樂聽起來一樣大聲），但最大不超過 peak"""
     os.makedirs(OUT, exist_ok=True)
     m = max(1e-6, max(abs(x) for x in buf))
     scale = peak / m if m > peak else 1.0
+    if rms is not None:
+        cur = math.sqrt(sum(x * x for x in buf) / len(buf))
+        scale = min(rms / max(1e-6, cur), peak / m)
     path = os.path.join(OUT, name + ".wav")
     with wave.open(path, "wb") as w:
         w.setnchannels(1)
@@ -262,21 +266,54 @@ def make_main():
     return lofi(78, chords, melody)
 
 
+def sub(note, length):
+    """很低的正弦低音，有點「嗡」的壓迫感"""
+    return tone(freq(note), length, "sine", attack=0.01, release=0.08)
+
+
 def make_final():
-    """決戰：一樣是 Lo-fi，但改成小調、快一點、鼓和低音比較密：Am7 - Fmaj7 - Dm7 - E7"""
-    chords = [[n("A2"), n("G3"), n("C4"), n("E4")], [n("F2"), n("E3"), n("A3"), n("C4")],
-              [n("D3"), n("F3"), n("A3"), n("C4")], [n("E2"), n("D3"), n("G#3"), n("B3")]]
-    melody = [
-        [("E5", 0, 1), ("A5", 1, 1), ("G5", 2, 1), ("E5", 3, 1)],
-        [("C5", 0, 1.5), ("E5", 1.5, 0.5), ("F5", 2, 2)],
-        [("D5", 0, 1), ("F5", 1, 1), ("A5", 2, 1.5), ("C6", 3.5, 0.5)],
-        [("B5", 0, 1.5), ("G#5", 1.5, 0.5), ("E5", 2, 2)],
-        [("A5", 0, 0.5), ("G5", 0.5, 0.5), ("E5", 1, 1), ("C5", 2, 1), ("E5", 3, 1)],
-        [("F5", 0, 1), ("E5", 1, 1), ("C5", 2, 2)],
-        [("D5", 0, 1), ("E5", 1, 1), ("F5", 2, 1), ("A5", 3, 1)],
-        [("G#5", 0, 2), ("B5", 2, 2)],
+    """決戰「倒數緊張」：100 BPM，撥弦 16 分音符像時鐘滴答、每拍一下大鼓、A 弗里吉亞調式。
+    前四小節只有滴答聲，之後旋律才進來。"""
+    bpm = 100
+    beat = 60 / bpm
+    six = beat / 4
+    # A 弗里吉亞（A Bb C D E F G）：Am - Bb - Gm - Am
+    chords = [[n("A2"), n("C3"), n("E3"), n("G3")], [n("Bb2"), n("D3"), n("F3"), n("A3")],
+              [n("G2"), n("Bb2"), n("D3"), n("F3")], [n("A2"), n("C3"), n("E3"), n("G3")]]
+    tick = [0, 2, 1, 3, 2, 1, 3, 2]   # 16 分音符的撥弦順序（和弦音）
+    mel = [
+        [("E5", 0, 2), ("F5", 2, 2)],
+        [("D5", 0, 2), ("F5", 2, 1), ("A5", 3, 1)],
+        [("G5", 0, 2), ("F5", 2, 1), ("D5", 3, 1)],
+        [("E5", 0, 4)],
     ]
-    return lofi(92, chords, melody, busy=True)
+    bars = 16
+    total = int(bars * 4 * beat * RATE)
+    buf = [0.0] * total
+    lead = [0.0] * total
+
+    def at(t):
+        return int(t * RATE)
+
+    for bar in range(bars):
+        ch = chords[bar % 4]
+        s0 = bar * 4 * beat
+        mix_wrap(buf, at(s0), pad([k + 12 for k in ch], 4 * beat), 0.24)
+        for i in range(16):
+            k = ch[tick[i % 8]] + 24
+            mix_wrap(buf, at(s0 + i * six), tone(freq(k), six * 2, "pluck"), 0.1 if i % 4 == 0 else 0.06)
+        for b in range(4):
+            mix_wrap(buf, at(s0 + b * beat), soft_kick(), 0.4)
+            mix_wrap(buf, at(s0 + b * beat + beat / 2), noise(0.03, 1, 7, 2.0, 0.35), 0.05)
+        for b in (1, 3):
+            mix_wrap(buf, at(s0 + b * beat), brush(0.16), 0.2)
+        mix_wrap(buf, at(s0), sub(ch[0] - 12, beat * 2), 0.5)
+        mix_wrap(buf, at(s0 + 2 * beat), sub(ch[0] - 12, beat * 2), 0.4)
+        if bar >= 4:
+            for name, st, ln in mel[bar % 4]:
+                mix_wrap(lead, at(s0 + st * beat), tone(freq(n(name)), beat * (ln + 0.5), "bell"), 0.22)
+    lead = echo(lead, beat * 0.75, 0.3, 0.3)
+    return [a + b for a, b in zip(buf, lead)]
 
 
 # ---------- 音效 ----------
@@ -332,5 +369,5 @@ SFX = {   # 音色以正弦、撥弦、鐘聲為主，比較乾淨，跟 Lo-fi �
 if __name__ == "__main__":
     for name, fn in SFX.items():
         save("sfx_" + name, fn())
-    save("music_main", make_main(), 0.8)
-    save("music_final", make_final(), 0.8)
+    save("music_main", make_main(), 0.8, rms=0.12)
+    save("music_final", make_final(), 0.8, rms=0.13)   # 決戰稍微大聲一點點

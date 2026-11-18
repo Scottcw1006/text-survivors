@@ -24,6 +24,17 @@ var shoot_range := 300.0   # 遠程敵人：多近開始放箭
 var shoot_interval := 2.0  # 遠程敵人：幾秒放一次箭
 var arrow_speed := 220.0   # 遠程敵人：矢飛多快
 var volley := 1            # 遠程敵人：一次放幾支箭（扇形）
+var label := ""            # 顯示的字（王：大字的「甲」；最終王：「大鬼」…），統計、提示用這個
+var shield_max := 0        # 王魂、王鬼、大魂、大鬼：無敵次數會定時重置回這個數
+var shield_every := 0.0    # 幾秒重置一次無敵（0 = 不重置）
+var shield_t := 0.0
+var aura := false          # 大魂：重置無敵時放出一圈無敵領域
+var invuln := 0.0          # 站在大魂的無敵領域裡：還有幾秒完全不受傷
+var burst := 1             # 大弩：一次連射幾發（一發接一發）
+var burst_left := 0
+var burst_cd := 0.0
+var dashes := 1            # 大犇：一次蓄力連衝幾次
+var dashes_left := 0
 var shield := 0            # 魂、鬼：還能完全擋掉幾次攻擊（擋的時候身體是半透明的）
 var wobble := false        # 魂、鬼：走路會左右飄
 var wobble_freq := Vector2.ONE   # 兩個不同頻率的正弦疊起來，飄得不規則
@@ -57,6 +68,13 @@ func setup_type(type_name: String, t: Dictionary, hp_mult: float) -> Enemy:
 	volley = t.get("volley", 1)
 	base_color = t["color"]
 	shield = t.get("shield", 0)
+	shield_max = shield
+	shield_every = t.get("shield_every", 0.0)
+	shield_t = shield_every
+	aura = t.get("aura", false)
+	burst = t.get("burst", 1)
+	dashes = t.get("dashes", 1)
+	label = type_name
 	wobble = t.get("wobble", false)
 	wobble_freq = Vector2(randf_range(1.5, 3.0), randf_range(3.5, 6.0))
 	wobble_phase = Vector2(randf() * TAU, randf() * TAU)
@@ -77,8 +95,17 @@ func take_damage(amount: float) -> bool:
 	return hp <= 0.0
 
 
+## 無敵次數重置回滿（王魂、王鬼、大魂、大鬼）
+func refill_shield() -> void:
+	shield = shield_max
+	_update_ghost()
+	queue_redraw()
+
+
 ## 擋下一次攻擊，回傳 true = 這次攻擊被擋掉了
 func block_hit() -> bool:
+	if invuln > 0.0:
+		return true
 	if shield <= 0:
 		return false
 	shield -= 1

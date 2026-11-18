@@ -3,7 +3,9 @@ extends Node2D
 
 # ===== 遊戲參數（調平衡改這裡）=====
 const GAME_DURATION := 180.0        # 撐過幾秒進入決戰
-const FINAL_BOSSES := ["王", "王", "大弓"]   # 決戰出現的最終王，全部打倒才算贏
+## 決戰：兩隻「王」加一隻「大」字頭的王，全部打倒才算贏（種類隨機）
+const FINAL_KINGS := 2
+const BIG_KINDS := ["弓", "鬼", "魂", "牛", "犇", "弩"]   # 「大」字王可能是哪幾種
 const VOLLEY_SPREAD := 0.7          # 大弓一次放箭的扇形角度（弧度，約 40 度）
 const PLAYER_MAX_HP := 100
 const VITAL_REGEN := 0.1             # 「體」每一級每秒回多少血
@@ -67,8 +69,8 @@ const BIRD_GROUP := 3               # 鳥一次來幾隻
 const FINAL_SIZE_MULT := 1.3        # 最終王的字放大幾倍（會取最近的 11 的倍數，像素字才銳利）
 const FINAL_HP_MULT := 2.0          # 最終王的血量倍率
 const FINAL_SPEED_MULT := 1.5       # 最終王的移動速度倍率
-const FINAL_FIRE_RATE_MULT := 1.5   # 最終王（大弓）放箭的頻率倍率
-const FINAL_ARROW_SPEED_MULT := 1.5 # 最終王（大弓）矢的飛行速度倍率
+const FINAL_FIRE_RATE_MULT := 1.5   # 最終王放箭的頻率倍率
+const FINAL_ARROW_SPEED_MULT := 1.5 # 最終王矢的飛行速度倍率
 const ARCHER_RANGE := 300.0         # 弓在這個距離內、看得到你就停下來放箭
 const ARROW_INTERVAL := 2.0
 const ARROW_SPEED := 220.0
@@ -107,13 +109,24 @@ const ENEMY_TYPES := {
 	# 犇：牛的進階，更大更硬，蓄力時和衝到定點時各炸一圈
 	"犇": {"hp": 120.0, "speed": 65.0, "radius": 22.0, "size": 44, "damage": 40, "gold": 6,
 		"color": Color(0.85, 0.35, 0.2), "charger": true, "blaster": true},
-	"王": {"hp": 600.0, "speed": 70.0, "radius": 28.0, "size": 66, "damage": 50, "gold": 25,
-		"color": Color(1.0, 0.2, 0.2), "ignores_walls": true, "knock_resist": 0.15, "boss": true},
-	# 最終王之一：會穿牆，保持距離一次放 5 支扇形的矢
-	"大弓": {"hp": 600.0, "speed": 60.0, "radius": 34.0, "size": 55, "damage": 40, "gold": 0,
-		"color": Color(0.65, 0.35, 0.9), "ignores_walls": true, "knock_resist": 0.15, "boss": true,
-		"ranged": true, "shoot_range": 600.0, "volley": 5},
 }
+# ---------- 王（任何一種敵人的大字版，會穿牆） ----------
+const BOSS_HP_RATIO := 40.0           # 王的血量 = 那種小兵的血量 × 40（敵 15 → 600）
+const BOSS_SPEED_MULT := 0.78         # 王的速度 = 那種小兵 × 0.78（敵 90 → 70）
+const BOSS_SIZE := 66
+const BOSS_RADIUS := 28.0
+const BOSS_DAMAGE := 50
+const BOSS_GOLD := 25
+const BOSS_KNOCK_RESIST := 0.15
+const BOSS_SHIELD_EVERY := 7.0        # 王魂、王鬼：每幾秒重置無敵
+const BIG_HP_MULT := 1.5              # 「大」字王比一般的王多 50% 血
+const BIG_SIZE := 55
+const BIG_RADIUS := 34.0
+const BIG_SHIELD_EVERY := 3.0         # 大魂、大鬼：每幾秒重置無敵
+const AURA_RADIUS := 108.0            # 大魂的無敵領域半徑（3 格）
+const AURA_TIME := 1.0                # 領域裡的敵人無敵幾秒
+const BURST_GAP := 0.12               # 大弩連射的間隔
+const COLOR_AURA := Color(0.6, 0.75, 1.0)
 const SPAWN_INTERVAL_START := 0.4   # 開局幾秒生一隻
 const SPAWN_INTERVAL_END := 0.15    # 三分鐘時幾秒生一隻
 const SPAWN_MARGIN := 60.0          # 在畫面邊緣外多遠生成
@@ -1052,17 +1065,19 @@ func _is_blade() -> bool:
 
 # ---------- 決戰 ----------
 
-## 三分鐘到：出現最終王（兩隻王、一隻大弓），打倒全部才算贏；之後還是會掉金，但不再出寶箱
+## 三分鐘到：出現最終王（兩隻王、一隻「大」字王），打倒全部才算贏；之後還是會掉金，但不再出寶箱
 func _start_final_phase() -> void:
 	final_phase = true
 	audio.play("final")
 	audio.play_music("final")
-	for i in FINAL_BOSSES.size():
+	var bigs := BIG_KINDS.filter(func(k: String) -> bool: return not DIFFICULTIES[difficulty].banned.has(k))
+	var total := FINAL_KINGS + 1
+	for i in total:
 		var pos := _find_spawn_point()
 		if pos == Vector2.INF:
-			pos = player.position + Vector2.from_angle(TAU * i / FINAL_BOSSES.size()) * get_viewport_rect().size.x * 0.55
-		_spawn_enemy(FINAL_BOSSES[i], pos)
-		var boss: Enemy = enemies[-1]
+			pos = player.position + Vector2.from_angle(TAU * i / total) * get_viewport_rect().size.x * 0.55
+		var big := i == total - 1
+		var boss := _spawn_boss(bigs.pick_random() if big else _pick_enemy_type(), pos, big)
 		boss.font_size = int(roundf(boss.font_size * FINAL_SIZE_MULT / 11.0)) * 11
 		boss.radius *= FINAL_SIZE_MULT
 		boss.max_hp *= FINAL_HP_MULT
@@ -1074,7 +1089,7 @@ func _start_final_phase() -> void:
 		boss.shoot_cd = minf(boss.shoot_cd, boss.shoot_interval)
 		boss.queue_redraw()
 		final_bosses.append(boss)
-		final_roster.append(boss.kind)
+		final_roster.append(boss.label)
 	var banner := particles.add("決戰", player.position + Vector2(0, -120), Vector2(0, -20), 2.0, 66, COLOR_ENEMY_BOSS)
 	banner.grow = 0.2
 	_shake(12.0)
@@ -1089,7 +1104,7 @@ func _spawn_enemies(delta: float) -> void:
 		next_boss_time += BOSS_INTERVAL
 		var bp := _find_spawn_point()
 		if bp != Vector2.INF:
-			_spawn_enemy("王", bp)
+			_spawn_boss(_pick_enemy_type(), bp, false)
 			audio.play("boss")
 
 	spawn_cd -= delta
@@ -1127,6 +1142,47 @@ func _find_spawn_point() -> Vector2:
 		if terrain.flow_distance(c) >= 0:
 			return terrain.cell_center(c)
 	return Vector2.INF
+
+
+## 生一隻王：kind 種敵人的大字版，行為一樣、但會穿牆。big = 決戰的「大」字王（血 +50%、各有特殊技）
+func _spawn_boss(kind: String, pos: Vector2, big: bool) -> Enemy:
+	var t: Dictionary = ENEMY_TYPES[kind].duplicate()
+	t["hp"] = t["hp"] * BOSS_HP_RATIO * (BIG_HP_MULT if big else 1.0)
+	t["speed"] = t["speed"] * BOSS_SPEED_MULT
+	t["size"] = BIG_SIZE if big else BOSS_SIZE
+	t["radius"] = BIG_RADIUS if big else BOSS_RADIUS
+	t["damage"] = BOSS_DAMAGE
+	t["gold"] = 0 if big else BOSS_GOLD
+	t["ignores_walls"] = true
+	t["knock_resist"] = BOSS_KNOCK_RESIST
+	t["boss"] = true
+	t["wobble"] = false   # 王不亂飄
+	if t.get("shield", 0) > 0:
+		t["shield_every"] = BIG_SHIELD_EVERY if big else BOSS_SHIELD_EVERY
+		if big and kind == "魂":
+			t["aura"] = true
+	if big:
+		match kind:
+			"弓":
+				t["volley"] = 5
+				t["shoot_range"] = 600.0
+			"弩":
+				t["burst"] = 5
+				t["shoot_range"] = 600.0
+			"犇":
+				t["dashes"] = 2
+	var e := Enemy.new().setup_type(kind, t, _hp_mult())
+	e.speed *= DIFFICULTIES[difficulty].speed
+	e.label = ("大" + kind) if big else kind
+	e.set_text(e.label)
+	e.position = pos
+	e.z_index = 3
+	e.shoot_interval = ARROW_INTERVAL
+	e.arrow_speed = ARROW_SPEED
+	e.shoot_cd = randf() * ARROW_INTERVAL
+	add_child(e)
+	enemies.append(e)
+	return e
 
 
 ## 越後面出現的種類越多
@@ -1185,6 +1241,23 @@ func _spawn_enemy(kind: String, pos: Vector2) -> void:
 func _move_enemies(delta: float) -> void:
 	for e: Enemy in enemies:
 		e.tick(delta)
+		if e.invuln > 0.0:
+			e.invuln -= delta
+		# 王魂、王鬼、大魂、大鬼：定時把無敵次數補滿
+		if e.shield_every > 0.0:
+			e.shield_t -= delta
+			if e.shield_t <= 0.0:
+				e.shield_t = e.shield_every
+				e.refill_shield()
+				if e.aura:
+					_soul_aura(e)
+		# 大弩：連射中，一發接一發
+		if e.burst_left > 0:
+			e.burst_cd -= delta
+			if e.burst_cd <= 0.0:
+				e.burst_left -= 1
+				e.burst_cd = BURST_GAP
+				_shoot_arrow(e)
 		var to_player := player.position - e.position
 		var vel: Vector2
 		if e.ignores_walls:
@@ -1202,7 +1275,11 @@ func _move_enemies(delta: float) -> void:
 				vel = Vector2.ZERO
 				if e.shoot_cd <= 0.0:
 					e.shoot_cd = e.shoot_interval
-					_shoot_arrow(e)
+					if e.burst > 1:
+						e.burst_left = e.burst
+						e.burst_cd = 0.0
+					else:
+						_shoot_arrow(e)
 		# 牛、犇：蓄力 → 衝刺 → 喘一下
 		if e.charger:
 			vel = _charge_step(e, vel, to_player, delta)
@@ -1241,6 +1318,7 @@ func _charge_step(e: Enemy, vel: Vector2, to_player: Vector2, delta: float) -> V
 				# 開始蓄力：記住玩家現在的位置，之後就衝這裡
 				e.charge_state = 1
 				e.charge_t = CHARGE_WINDUP
+				e.dashes_left = e.dashes
 				e.charge_target = player.position
 				e.knock = Vector2.ZERO
 				if e.blaster:
@@ -1299,10 +1377,17 @@ func _stomp_dust(e: Enemy) -> void:
 
 
 func _end_charge(e: Enemy) -> void:
-	e.charge_state = 3
-	e.charge_t = CHARGE_REST
 	if e.blaster:
 		_enemy_blast(e)
+	# 大犇：還有下一衝的話，短暫蓄力（踩一下）後再衝向玩家現在的位置
+	if e.dashes_left > 1:
+		e.dashes_left -= 1
+		e.charge_state = 1
+		e.charge_t = CHARGE_WINDUP * 0.45
+		e.charge_target = player.position
+		return
+	e.charge_state = 3
+	e.charge_t = CHARGE_REST
 
 
 ## 犇的爆炸：一圈小「爆」，範圍內的玩家受傷
@@ -1319,6 +1404,21 @@ func _enemy_blast(e: Enemy) -> void:
 	_shake(4.0)
 	if player.position.distance_to(e.position) < BLAST_RADIUS + PLAYER_RADIUS:
 		_hurt_player(BLAST_DAMAGE)
+
+
+## 大魂：放出一圈半徑 3 格的無敵領域，裡面的敵人 1 秒內完全不受傷
+func _soul_aura(src: Enemy) -> void:
+	audio.play("block")
+	for e: Enemy in _nearby_radius(src.position, AURA_RADIUS + 30.0):
+		if e.position.distance_to(src.position) <= AURA_RADIUS + e.radius:
+			e.invuln = AURA_TIME
+	var fx := Fx.new()
+	var count := 16
+	for i in count:
+		var g := _fx_glyph("護", src.position + Vector2.from_angle(TAU * i / count) * AURA_RADIUS)
+		g.color = COLOR_AURA
+		fx.nodes.append(g)
+	_add_fx(fx, AURA_TIME)
 
 
 ## 放箭；volley > 1 時一次放一排扇形的箭（大弓）
@@ -1385,7 +1485,7 @@ func _block_hit(e: Enemy) -> bool:
 ## 死亡特效：字放大淡出，同時碎成幾個筆畫往外飛
 func _shatter(e: Enemy) -> void:
 	var boss := e.is_boss
-	var pop := particles.add(e.kind, e.position, Vector2.ZERO, 0.15, e.font_size, Color.WHITE)
+	var pop := particles.add(e.label, e.position, Vector2.ZERO, 0.15, e.font_size, Color.WHITE)
 	pop.grow = 4.0
 	for i in (10 if boss else 4):
 		var dir := Vector2.from_angle(randf() * TAU)
@@ -1403,7 +1503,10 @@ func _kill_enemy(e: Enemy) -> void:
 		return
 	enemies.erase(e)
 	final_bosses.erase(e)   # 決戰的王死了就從清單拿掉
-	kills_by_kind[e.kind] = kills_by_kind.get(e.kind, 0) + 1
+	var key := e.kind
+	if e.is_boss:
+		key = e.label if e.label.begins_with("大") else "王"
+	kills_by_kind[key] = kills_by_kind.get(key, 0) + 1
 	audio.play("explode" if e.is_boss else "kill")
 	var cell: Array = grid.get(_cell(e.position), [])
 	cell.erase(e)
@@ -2163,7 +2266,7 @@ func _update_gold(delta: float) -> void:
 
 
 # ---------- 天罰 ----------
-## 一局只能用一次：滑鼠左鍵點任何地方，全地圖的小兵瞬間清空（王、大弓吃重傷害），空中的矢也一起清掉
+## 一局只能用一次：滑鼠左鍵點任何地方，全地圖的小兵瞬間清空（王吃重傷害），空中的矢也一起清掉
 
 func _update_smite(_delta: float) -> void:
 	smite_ring.visible = false   # 全圖攻擊不需要瞄準
@@ -2414,18 +2517,18 @@ func _update_boss_pointers() -> void:
 	for e in enemies:
 		if not e.is_boss:
 			continue
-		var edge := _edge_point(e.position, POINTER_MARGIN + 40.0)   # 「大弓」兩個字比較寬
+		var edge := _edge_point(e.position, POINTER_MARGIN + 40.0)   # 「大鬼」這種兩個字比較寬
 		if edge == Vector2.INF:
 			continue
 		if used >= boss_pointers.size():
-			var g := Glyph.new().setup(e.kind, POINTER_SIZE, e.base_color)
+			var g := Glyph.new().setup(e.label, POINTER_SIZE, e.base_color)
 			g.modulate.a = 0.8
 			g.z_index = 20
 			add_child(g)
 			boss_pointers.append(g)
 		var ptr := boss_pointers[used]
-		if ptr.text != e.kind:
-			ptr.set_text(e.kind)
+		if ptr.text != e.label:
+			ptr.set_text(e.label)
 		ptr.color = e.base_color
 		ptr.position = edge
 		ptr.visible = true
@@ -2455,7 +2558,7 @@ func _update_boss_bars() -> void:
 	for kind in final_roster:
 		var boss: Enemy = null
 		for b in alive:
-			if b.kind == kind:
+			if b.label == kind:
 				boss = b
 				break
 		if boss == null:
@@ -2851,7 +2954,7 @@ func _update_hud() -> void:
 	if final_phase:
 		var counts := {}
 		for b in final_bosses:
-			counts[b.kind] = counts.get(b.kind, 0) + 1
+			counts[b.label] = counts.get(b.label, 0) + 1
 		var parts := []
 		for k: String in counts:
 			parts.append("%s ×%d" % [k, counts[k]])
@@ -2894,6 +2997,13 @@ func _kill_rows() -> Array:
 		var count: int = kills_by_kind.get(kind, 0)
 		if count > 0:
 			rows.append({"glyph": kind, "color": ENEMY_TYPES[kind]["color"], "text": "× %d" % count})
+	# 王、大字王
+	if kills_by_kind.get("王", 0) > 0:
+		rows.append({"glyph": "王", "color": COLOR_ENEMY_BOSS, "text": "× %d" % kills_by_kind["王"]})
+	for k: String in BIG_KINDS:
+		var count: int = kills_by_kind.get("大" + k, 0)
+		if count > 0:
+			rows.append({"glyph": "大" + k, "color": ENEMY_TYPES[k]["color"], "text": "× %d" % count})
 	if rows.is_empty():
 		rows.append({"glyph": "", "color": Color.WHITE, "text": "一隻都沒有"})
 	return rows

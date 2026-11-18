@@ -189,7 +189,8 @@ const ORBIT_RADIUS := 70.0          # 人＋刀：迴旋刃內圈半徑
 const ORBIT_RING_GAP := 50.0        # Lv2 外圈比內圈遠多少
 const ORBIT_PER_RING := 4           # 每一圈幾把刃
 const FLY_BARRAGE := 8              # Lv5：爆炸後一整圈射出幾把刃
-const ORBIT_SPEED := 3.0            # 人＋刀：每秒轉幾弧度
+const ORBIT_SPEED := 3.6            # 人＋刀：每秒轉幾弧度
+const ORBIT_DAMAGE_MULT := 1.2      # 迴旋刃（含爆旋、刃幕）的傷害倍率
 const ORBIT_HIT_CD := 0.4           # 同一把刃多久能再打同一隻敵人
 const SPIN_EVERY := 1.0             # Lv3 疾旋：每轉 1 秒……
 const SPIN_TIME := 1.0              # ……就快速旋轉 1 秒
@@ -2015,7 +2016,7 @@ func _update_orbit(delta: float) -> void:
 			if elapsed - orbit_hits.get(id, -99.0) < hit_cd:
 				continue
 			orbit_hits[id] = elapsed
-			_damage_enemy(e, _damage(), (e.position - player.position).normalized() * KNOCK_SLASH)
+			_damage_enemy(e, _damage() * ORBIT_DAMAGE_MULT, (e.position - player.position).normalized() * KNOCK_SLASH)
 
 
 ## 最外圈迴旋刃的半徑
@@ -2030,7 +2031,7 @@ func _orbit_burst(r: float) -> void:
 	for e: Enemy in _nearby_radius(player.position, r + 30.0):
 		var to := e.position - player.position
 		if to.length() <= r + e.radius:
-			_damage_enemy(e, _damage() * BURST_MULT, to.normalized() * KNOCK_SLASH)
+			_damage_enemy(e, _damage() * BURST_MULT * ORBIT_DAMAGE_MULT, to.normalized() * KNOCK_SLASH)
 	var count := 12
 	for i in count:
 		var dir := Vector2.from_angle(TAU * i / count)
@@ -2054,7 +2055,7 @@ func _launch_flying_blade(pos: Vector2, dir: Vector2) -> void:
 	b.vel = dir * BULLET_SPEED * FLY_SPEED_MULT
 	b.life = BULLET_LIFETIME * FLY_RANGE_MULT / FLY_SPEED_MULT   # 兩倍快、兩倍遠 → 飛的時間一樣
 	b.pierce = bullet_pierce
-	b.damage = _damage()
+	b.damage = _damage() * ORBIT_DAMAGE_MULT
 	add_child(b.node)
 	flying_blades.append(b)
 

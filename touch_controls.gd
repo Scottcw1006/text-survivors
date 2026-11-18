@@ -72,7 +72,7 @@ func _input(event: InputEvent) -> void:
 
 func _touch_down(finger: int, pos: Vector2) -> void:
 	if main.state == main.State.PAUSED:
-		main.pause_tap(pos)                # 暫停中：點 ◀ ▶ 調音量、點「繼續」回遊戲
+		main.pause_tap(pos)                # 暫停中：點 ← → 調音量、點「繼續」回遊戲
 		return
 	if not main.is_playing():
 		_menu_tap(finger, pos)

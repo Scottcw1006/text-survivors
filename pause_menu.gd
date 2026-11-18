@@ -2,7 +2,7 @@ class_name PauseMenu
 extends Control
 ## 暫停畫面：一個「框」字圍起來的面板，裡面有音樂、音效音量和「繼續」。
 ## 鍵盤：W S 選、A D 調整、Space / Enter 在「繼續」上確定、Esc 直接繼續。
-## 手機：點 ◀ ▶ 調整音量，點「繼續」回到遊戲。
+## 手機：點 ← → 調整音量，點「繼續」回到遊戲。
 
 const CELL := 20.0
 const COLS := 26
@@ -60,8 +60,8 @@ func _draw() -> void:
 		_text(ROW_NAMES[row], Vector2(o.x + 80.0, y), 33, c)
 		var minus := Vector2(o.x + 150.0, y)
 		var plus := Vector2(o.x + w - 60.0, y)
-		_text("◀", minus, 33, c)
-		_text("▶", plus, 33, c)
+		_text("←", minus, 33, c)
+		_text("→", plus, 33, c)
 		var lv: int = levels[row]
 		var bar := "■".repeat(lv) + "□".repeat(GameAudio.VOLUME_STEPS - lv)
 		_text(bar, Vector2((minus.x + plus.x) / 2.0, y), 22, c)
@@ -78,7 +78,7 @@ func _draw() -> void:
 	_text("繼續", Vector2(mid, by), 33, COLOR_PICK if on_resume else COLOR_ON)
 	_rects["resume"] = _scaled(br, k)
 
-	var hint := "點 ◀ ▶ 調整音量" if touch_mode else "W S 選擇　A D 調整　Esc 繼續"
+	var hint := "點 ← → 調整音量" if touch_mode else "W S 選擇　A D 調整　Esc 繼續"
 	_text(hint, Vector2(mid, o.y + h + 36.0), 22, COLOR_DIM)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 

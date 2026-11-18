@@ -99,6 +99,8 @@ func stop_music() -> void:
 	_music.stop()
 
 
+## 保險用：正常情況 Music、SFX 兩條 bus 已經定義在 default_bus_layout.tres。
+## （網頁版一定要寫在那個檔案裡，執行中才新增的 bus 在網頁上不會接到喇叭，會沒有聲音）
 static func _ensure_bus(bus_name: String) -> void:
 	if AudioServer.get_bus_index(bus_name) >= 0:
 		return

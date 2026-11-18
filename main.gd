@@ -483,6 +483,7 @@ var hud_version: Label              # 選角畫面右下角的版本號
 var hud_final_hint: Label           # 決戰開始時畫面中上方的「打倒全部最終王！」
 var final_hint_time := 0.0          # 提示還要顯示幾秒
 var final_intro := 0.0              # 最終決戰開場停頓還剩幾秒
+var _intro_shown := 0               # 「最終決戰」已經出現幾個字
 var celebrate := 0.0                # 過關煙火還剩幾秒
 var firework_cd := 0.0
 var big_banner: Label               # 畫面正中間的大字（最終決戰、過關）
@@ -592,6 +593,17 @@ func _process(delta: float) -> void:
 	# 最終決戰開場：全部停住 2 秒，畫面中間「最終決戰」
 	if final_intro > 0.0:
 		final_intro -= delta
+		# 一個字一個字跳出來：最 → 最終 → 最終決 → 最終決戰，每個字出來時震一下
+		var shown := clampi(int((FINAL_INTRO_TIME - final_intro) / INTRO_CHAR_GAP) + 1, 1, INTRO_TEXT.length())
+		if shown != _intro_shown:
+			_intro_shown = shown
+			# 還沒出來的字用全形空白佔位，字的位置才不會跟著移動
+			var chars := []
+			for i in INTRO_TEXT.length():
+				chars.append(INTRO_TEXT[i] if i < shown else "　")
+			big_banner.text = "　".join(chars)
+			_shake(8.0)
+			audio.play("land")
 		if final_intro <= 0.0:
 			big_banner.visible = false
 		return
@@ -1235,7 +1247,8 @@ func _start_final_phase() -> void:
 		final_roster.append(boss.label)
 	# 停 2 秒，畫面中間大大的「最終決戰」（也順便蓋掉生成最終王的卡頓）
 	final_intro = FINAL_INTRO_TIME
-	_show_big_banner("最終決戰", COLOR_ENEMY_BOSS)
+	_intro_shown = 0
+	_show_big_banner("", COLOR_ENEMY_BOSS)
 	_shake(12.0)
 	final_hint_time = FINAL_HINT_TIME
 
@@ -2718,6 +2731,8 @@ func _edge_point(target: Vector2, margin := 40.0) -> Vector2:
 
 const FINAL_HINT_TIME := 4.0        # 決戰開始的提示顯示幾秒
 const FINAL_INTRO_TIME := 2.0       # 最終決戰開場停幾秒
+const INTRO_TEXT := "最終決戰"
+const INTRO_CHAR_GAP := 0.35        # 每隔幾秒多跳出一個字（4 個字 1.05 秒出完，再停一下）
 const CELEBRATE_TIME := 3.0         # 過關煙火放幾秒
 const FIREWORK_GAP := 0.22          # 每隔幾秒放一朵
 const FIREWORK_COLORS := [Color(1.0, 0.4, 0.4), Color(1.0, 0.85, 0.3), Color(0.5, 0.9, 1.0),

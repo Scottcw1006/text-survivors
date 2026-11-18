@@ -4,8 +4,11 @@ extends Node
 ## - play("hit")：播一個音效，同一個音效太密集時會略過（很多敵人同時被打不會吵成一團）
 ## - play_music("main")：換背景音樂（會循環）
 ## - 靜音：toggle_mute()，重開一局也會記得（直接靜音整個 Master bus）
+## - 音量：音樂、音效各有一條 bus，0～10 格，存在 user://settings.cfg（關掉網頁再開也記得）
 
 const POOL_SIZE := 16
+const VOLUME_STEPS := 10
+const SETTINGS_PATH := "user://settings.cfg"
 const MUSIC_DB := -12.0
 ## 每個音效的音量（dB）和最短間隔（秒），沒寫的就是 0 dB、不限制
 const SFX_SETTINGS := {
@@ -26,16 +29,30 @@ var _pool: Array[AudioStreamPlayer] = []
 var _next := 0
 var _music: AudioStreamPlayer
 var _music_name := ""
+static var music_level := 7         # 0～10
+static var sfx_level := 8
+static var _loaded := false
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_ensure_bus("Music")
+	_ensure_bus("SFX")
+	if not _loaded:
+		_loaded = true
+		var cfg := ConfigFile.new()
+		if cfg.load(SETTINGS_PATH) == OK:
+			music_level = int(cfg.get_value("audio", "music", music_level))
+			sfx_level = int(cfg.get_value("audio", "sfx", sfx_level))
+	_apply_levels()
 	for i in POOL_SIZE:
 		var p := AudioStreamPlayer.new()
+		p.bus = "SFX"
 		add_child(p)
 		_pool.append(p)
 	_music = AudioStreamPlayer.new()
 	_music.volume_db = MUSIC_DB
+	_music.bus = "Music"
 	_music.finished.connect(func() -> void: _music.play())   # 播完再從頭播（保險，正常會自己循環）
 	add_child(_music)
 
@@ -80,6 +97,39 @@ func play_music(track: String) -> void:
 func stop_music() -> void:
 	_music_name = ""
 	_music.stop()
+
+
+static func _ensure_bus(bus_name: String) -> void:
+	if AudioServer.get_bus_index(bus_name) >= 0:
+		return
+	AudioServer.add_bus()
+	var i := AudioServer.bus_count - 1
+	AudioServer.set_bus_name(i, bus_name)
+	AudioServer.set_bus_send(i, "Master")
+
+
+## 調整音量（which = "music" 或 "sfx"），delta 是加減幾格，會存檔
+static func change_level(which: String, delta: int) -> void:
+	if which == "music":
+		music_level = clampi(music_level + delta, 0, VOLUME_STEPS)
+	else:
+		sfx_level = clampi(sfx_level + delta, 0, VOLUME_STEPS)
+	_apply_levels()
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS_PATH)
+	cfg.set_value("audio", "music", music_level)
+	cfg.set_value("audio", "sfx", sfx_level)
+	cfg.save(SETTINGS_PATH)
+
+
+static func _apply_levels() -> void:
+	for pair in [["Music", music_level], ["SFX", sfx_level]]:
+		var i := AudioServer.get_bus_index(pair[0])
+		if i < 0:
+			continue
+		var level: int = pair[1]
+		AudioServer.set_bus_mute(i, level <= 0)
+		AudioServer.set_bus_volume_db(i, linear_to_db(float(level) / VOLUME_STEPS) if level > 0 else -80.0)
 
 
 static func is_muted() -> bool:

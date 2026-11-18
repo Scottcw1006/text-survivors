@@ -376,6 +376,8 @@ var menu_label: Label
 var level_cards: UpgradeCards       # 升級卡片畫面
 var touch: TouchControls            # 手機觸控（虛擬搖桿、技/天按鍵）
 var audio: GameAudio                # 音樂與音效
+var pause_menu: PauseMenu           # 暫停畫面（音量設定）
+var _ignore_click_frame := -1       # 點暫停畫面的「繼續」那一格，不要觸發天罰
 var is_touch := false               # 有觸控螢幕就開手機操作
 var rotate_hint: ColorRect          # 手機直拿時的「請轉橫」提示
 var final_frame: Control            # 決戰時整個畫面外圍的一圈紅色「戰」
@@ -448,8 +450,7 @@ func _process(delta: float) -> void:
 				get_tree().reload_current_scene()
 			return
 		State.PAUSED:
-			if Input.is_action_just_pressed("pause"):
-				_set_paused(false)
+			_process_pause()
 			return
 
 	if Input.is_action_just_pressed("pause"):
@@ -646,12 +647,52 @@ func _set_paused(on: bool) -> void:
 		if child is TextParticles or child is SlashFx:
 			child.process_mode = Node.PROCESS_MODE_DISABLED if on else Node.PROCESS_MODE_INHERIT
 	if on:
-		_show_menu("暫停\n\n" + ("點畫面繼續" if is_touch else "按 Esc 繼續"))
-		menu_label.add_theme_font_size_override("font_size", 44)
+		pause_menu.open(is_touch)
 	else:
-		menu.visible = false
+		pause_menu.visible = false
 	if touch != null:
 		touch.refresh()
+
+
+## 暫停畫面：W S 選、A D 調音量、Space / Enter 在「繼續」上確定、Esc 直接繼續
+func _process_pause() -> void:
+	if Input.is_action_just_pressed("pause"):
+		_set_paused(false)
+		return
+	var row := pause_menu.cursor
+	if Input.is_action_just_pressed("move_up"):
+		pause_menu.cursor = posmod(row - 1, 3)
+		audio.play("ui_move")
+	elif Input.is_action_just_pressed("move_down"):
+		pause_menu.cursor = posmod(row + 1, 3)
+		audio.play("ui_move")
+	elif row < 2 and Input.is_action_just_pressed("move_left"):
+		_change_volume("music" if row == 0 else "sfx", -1)
+	elif row < 2 and Input.is_action_just_pressed("move_right"):
+		_change_volume("music" if row == 0 else "sfx", 1)
+	elif row == 2 and Input.is_action_just_pressed("confirm"):
+		_set_paused(false)
+		return
+	pause_menu.queue_redraw()
+
+
+func _change_volume(which: String, delta: int) -> void:
+	GameAudio.change_level(which, delta)
+	audio.play("gold" if which == "sfx" else "ui_move")   # 調音效時播一聲，聽得出大小
+	pause_menu.queue_redraw()
+
+
+## 手機點暫停畫面
+func pause_tap(pos: Vector2) -> void:
+	var key := pause_menu.button_at(pos)
+	match key:
+		"music-": pause_menu.cursor = 0; _change_volume("music", -1)
+		"music+": pause_menu.cursor = 0; _change_volume("music", 1)
+		"sfx-": pause_menu.cursor = 1; _change_volume("sfx", -1)
+		"sfx+": pause_menu.cursor = 1; _change_volume("sfx", 1)
+		"resume":
+			_set_paused(false)
+			_ignore_click_frame = Engine.get_process_frames()   # 這一下點擊不要當成天罰
 
 
 ## 靜音切換（M 鍵、手機的「音」按鍵）
@@ -1677,7 +1718,8 @@ func _update_gold(delta: float) -> void:
 
 func _update_smite(_delta: float) -> void:
 	smite_ring.visible = false   # 全圖攻擊不需要瞄準
-	if Input.is_action_just_pressed("smite") and not smite_used:
+	if Input.is_action_just_pressed("smite") and not smite_used \
+			and Engine.get_process_frames() - _ignore_click_frame > 1:
 		smite_used = true
 		_smite_all()
 
@@ -2247,6 +2289,13 @@ func _build_hud() -> void:
 	level_cards.visible = false
 	root.add_child(level_cards)
 	root.move_child(hud_version, -1)   # 版本號要蓋在卡片畫面上面才看得到
+
+	pause_menu = PauseMenu.new()
+	pause_menu.font = font
+	pause_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	pause_menu.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pause_menu.visible = false
+	root.add_child(pause_menu)
 
 	# 手機模式直拿時畫面太小：蓋一層提示請轉橫（放最上面，連卡片都蓋住）
 	rotate_hint = ColorRect.new()

@@ -57,7 +57,9 @@ func _input(event: InputEvent) -> void:
 		var m := event as InputEventMouseButton
 		if m.button_index != MOUSE_BUTTON_LEFT:
 			return
-		if m.pressed and not main.is_playing():
+		if m.pressed and main.state == main.State.PAUSED:
+			main.pause_tap(m.position)
+		elif m.pressed and not main.is_playing():
 			_menu_tap(MOUSE_FINGER, m.position)
 		elif not m.pressed:
 			_touch_up(MOUSE_FINGER)
@@ -70,7 +72,7 @@ func _input(event: InputEvent) -> void:
 
 func _touch_down(finger: int, pos: Vector2) -> void:
 	if main.state == main.State.PAUSED:
-		_press(finger, "pause")            # 暫停中：點哪裡都是繼續
+		main.pause_tap(pos)                # 暫停中：點 ◀ ▶ 調音量、點「繼續」回遊戲
 		return
 	if not main.is_playing():
 		_menu_tap(finger, pos)

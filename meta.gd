@@ -14,14 +14,14 @@ const REROLL_PER_LEVEL := 3
 ## 局外升級的項目：id、名稱、最高等級、每一級要幾個 token
 ## 一般升級的 id 跟 main.gd 的 UPGRADES 一樣（power、haste…），前面加 "up_"
 const ITEMS := [
-	{"id": "up_power",  "icon": "力", "name": "攻擊力",   "max": 3, "cost": [1, 2, 3]},
-	{"id": "up_haste",  "icon": "疾", "name": "攻擊速度", "max": 3, "cost": [1, 2, 3]},
-	{"id": "up_pierce", "icon": "穿", "name": "穿透",     "max": 3, "cost": [1, 2, 3], "who": "人"},
-	{"id": "up_reach",  "icon": "廣", "name": "斬擊範圍", "max": 3, "cost": [1, 2, 3], "who": "刀"},
-	{"id": "up_speed",  "icon": "速", "name": "移動速度", "max": 3, "cost": [1, 2, 3]},
-	{"id": "up_vital",  "icon": "體", "name": "體魄",     "max": 3, "cost": [1, 2, 3]},
-	{"id": "up_magnet", "icon": "磁", "name": "吸金",     "max": 3, "cost": [1, 2, 3]},
-	{"id": "up_focus",  "icon": "息", "name": "調息",     "max": 3, "cost": [1, 2, 3]},
+	{"id": "up_power",  "icon": "力", "name": "攻擊力",   "max": 3, "cost": [1, 1, 1]},
+	{"id": "up_haste",  "icon": "疾", "name": "攻擊速度", "max": 3, "cost": [1, 1, 1]},
+	{"id": "up_pierce", "icon": "穿", "name": "穿透",     "max": 3, "cost": [1, 1, 1], "who": "人"},
+	{"id": "up_reach",  "icon": "廣", "name": "斬擊範圍", "max": 3, "cost": [1, 1, 1], "who": "刀"},
+	{"id": "up_speed",  "icon": "速", "name": "移動速度", "max": 3, "cost": [1, 1, 1]},
+	{"id": "up_vital",  "icon": "體", "name": "體魄",     "max": 3, "cost": [1, 1, 1]},
+	{"id": "up_magnet", "icon": "磁", "name": "吸金",     "max": 3, "cost": [1, 1, 1]},
+	{"id": "up_focus",  "icon": "息", "name": "調息",     "max": 3, "cost": [1, 1, 1]},
 	{"id": "reroll",    "icon": "換", "name": "重抽次數 +3", "max": 2, "cost": [1, 1]},
 	{"id": "chest",     "icon": "寶", "name": "開局寶箱",   "max": 2, "cost": [5, 5]},
 ]
@@ -70,6 +70,18 @@ static func buy(item: Dictionary) -> bool:
 	levels[item.id] = level(item.id) + 1
 	save()
 	return true
+
+
+## 全部重置：把花掉的 token 全部退回來
+static func refund_all() -> int:
+	var back := 0
+	for it: Dictionary in ITEMS:
+		for i in level(it.id):
+			back += int(it.cost[i])
+	tokens += back
+	levels = {}
+	save()
+	return back
 
 
 ## 這一局拿到幾個 token：每滿一分鐘 1 個（最多 3 個），打倒最終王 +2

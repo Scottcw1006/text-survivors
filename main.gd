@@ -658,6 +658,7 @@ func _setup_input() -> void:
 		"toggle_mode": [KEY_TAB],    # 選角畫面切換手機／電腦操作
 		"reroll": [KEY_R],           # 升級時重抽
 		"meta": [KEY_U],             # 選角畫面打開局外升級
+		"meta_reset": [KEY_BACKSPACE],  # 局外升級：全部重置
 		"pause": [KEY_ESCAPE],       # 遊戲中暫停／繼續
 		"mute": [KEY_M],             # 靜音／取消靜音（任何時候都可以）
 	}
@@ -728,6 +729,7 @@ func _apply_meta_start() -> void:
 
 func open_meta() -> void:
 	audio.play("ui_ok")
+	meta_menu.reset_armed = false
 	state = State.META
 	level_cards.visible = false
 	meta_menu.open(CHARACTERS[character].glyph, is_touch)
@@ -748,17 +750,36 @@ func _process_meta() -> void:
 	if Input.is_action_just_pressed("move_up"):
 		meta_menu.cursor = posmod(meta_menu.cursor - 1, n)
 		meta_menu.flash = ""
+		meta_menu.reset_armed = false
 		audio.play("ui_move")
 	elif Input.is_action_just_pressed("move_down"):
 		meta_menu.cursor = posmod(meta_menu.cursor + 1, n)
 		meta_menu.flash = ""
+		meta_menu.reset_armed = false
 		audio.play("ui_move")
 	elif Input.is_action_just_pressed("confirm"):
 		_meta_buy()
+	elif Input.is_action_just_pressed("meta_reset"):
+		_meta_reset()
+	meta_menu.queue_redraw()
+
+
+## 全部重置：第一次按只是提醒，再按一次才真的退回全部 token
+func _meta_reset() -> void:
+	if not meta_menu.reset_armed:
+		meta_menu.reset_armed = true
+		meta_menu.flash = "再按一次確定重置，退回全部 token"
+		audio.play("block")
+	else:
+		var back := Meta.refund_all()
+		meta_menu.reset_armed = false
+		meta_menu.flash = "已重置，退回 %d 個 token" % back
+		audio.play("chest")
 	meta_menu.queue_redraw()
 
 
 func _meta_buy() -> void:
+	meta_menu.reset_armed = false
 	var it: Dictionary = meta_menu.items()[meta_menu.cursor]
 	var cost := Meta.next_cost(it)
 	if cost < 0:
@@ -776,6 +797,9 @@ func _meta_buy() -> void:
 func meta_tap(pos: Vector2) -> void:
 	if meta_menu.back_at(pos):
 		close_meta()
+		return
+	if meta_menu.reset_at(pos):
+		_meta_reset()
 		return
 	var i := meta_menu.row_at(pos)
 	if i < 0:

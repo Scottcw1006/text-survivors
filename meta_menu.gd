@@ -1,7 +1,8 @@
 class_name MetaMenu
 extends Control
 ## 局外升級畫面（選角畫面進來）：一圈「框」字的面板，一行一個項目，用 token 升級。
-## 鍵盤：W S 選、Space / Enter 升級、Esc 或 U 返回。手機：點一行選它、再點一次升級；點「返回」離開。
+## 鍵盤：W S 選、Space / Enter 升級、Backspace 全部重置、Esc 或 U 返回。
+## 手機：點一行選它、再點一次升級；點「重置」退回全部 token（要點兩次確認）；點「返回」離開。
 
 const CELL := 20.0
 const COLS := 46
@@ -18,6 +19,8 @@ var touch_mode := false
 var flash := ""                 # 剛剛的提示（買到了 / token 不夠）
 var _row_rects: Array[Rect2] = []
 var _back_rect := Rect2()
+var _reset_rect := Rect2()
+var reset_armed := false        # 重置要按兩次：第一次只是提醒
 
 
 func items() -> Array:
@@ -42,6 +45,10 @@ func row_at(pos: Vector2) -> int:
 
 func back_at(pos: Vector2) -> bool:
 	return _back_rect.has_point(pos)
+
+
+func reset_at(pos: Vector2) -> bool:
+	return _reset_rect.has_point(pos)
 
 
 func _draw() -> void:
@@ -84,15 +91,19 @@ func _draw() -> void:
 		_text(price, Vector2(o.x + w - 120.0, y), 33, pc, true)
 		y += ROW_H
 
-	# 返回按鈕
-	var bw := 160.0
-	_back_rect = Rect2()
-	var br := Rect2(Vector2(mid - bw / 2.0, y + 10.0), Vector2(bw, 56.0))
+	# 重置、返回按鈕
+	var bw := 200.0
+	var rr := Rect2(Vector2(mid - bw - 20.0, y + 10.0), Vector2(bw, 56.0))
+	var rc := Color(1, 0.45, 0.4) if reset_armed else COLOR_DIM
+	draw_rect(rr, rc, false, 2.0)
+	_text("確定重置？" if reset_armed else "全部重置", rr.get_center(), 33, Color(1, 0.6, 0.55) if reset_armed else COLOR_ON, true)
+	_reset_rect = _scaled(rr, k)
+	var br := Rect2(Vector2(mid + 20.0, y + 10.0), Vector2(bw, 56.0))
 	draw_rect(br, COLOR_DIM, false, 2.0)
 	_text("返回", br.get_center(), 33, COLOR_ON, true)
 	_back_rect = _scaled(br, k)
 
-	var hint := "點一下選擇，再點一次升級" if touch_mode else "W S 選擇　Space / Enter 升級　Esc 返回"
+	var hint := "點一下選擇，再點一次升級" if touch_mode else "W S 選擇　Space / Enter 升級　Backspace 全部重置　Esc 返回"
 	if flash != "":
 		hint = flash
 	_text(hint, Vector2(mid, o.y + rows * CELL + 34.0), 22, COLOR_PICK if flash != "" else COLOR_DIM, true)

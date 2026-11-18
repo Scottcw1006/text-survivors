@@ -601,7 +601,7 @@ func _process(delta: float) -> void:
 			var chars := []
 			for i in INTRO_TEXT.length():
 				chars.append(INTRO_TEXT[i] if i < shown else "　")
-			big_banner.text = "　".join(chars)
+			big_banner.text = " ".join(chars)   # 字中間用半形空白
 			_shake(8.0)
 			audio.play("land")
 		if final_intro <= 0.0:

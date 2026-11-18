@@ -128,6 +128,8 @@ const SMITE_RADIUS := 108.0         # 只用來畫中間那圈「罰」
 const COLOR_SMITE := Color(0.75, 0.9, 1.0)
 
 # 寶箱：每 30 秒在附近隨機出現，王死掉也會掉；打開後二選一強化「彈」或「刀」
+const POINTER_SIZE := 66              # 寶箱、王在畫面外時，邊緣提示字的大小
+const POINTER_MARGIN := 60.0          # 提示字離畫面邊緣多遠（字變大了，要往內縮才不會被切掉）
 const HEAL_INTERVAL := 25.0          # 每幾秒出現一顆補血愛心
 const HEAL_AMOUNT := 20               # 一顆補多少血
 const HEAL_MAX_ON_MAP := 3            # 地圖上最多同時幾顆（沒撿就不再多生）
@@ -426,7 +428,7 @@ func _ready() -> void:
 	smite_ring.visible = false
 	add_child(smite_ring)
 
-	chest_pointer = Glyph.new().setup("寶", BULLET_SIZE, COLOR_CHEST)
+	chest_pointer = Glyph.new().setup("寶", POINTER_SIZE, COLOR_CHEST)
 	chest_pointer.modulate.a = 0.7
 	chest_pointer.z_index = 20
 	chest_pointer.visible = false
@@ -1960,7 +1962,7 @@ func _update_chest_pointer() -> void:
 	if best == null:
 		chest_pointer.visible = false
 		return
-	var edge := _edge_point(best.node.position)
+	var edge := _edge_point(best.node.position, POINTER_MARGIN)
 	chest_pointer.visible = edge != Vector2.INF
 	if chest_pointer.visible:
 		chest_pointer.position = edge
@@ -1972,11 +1974,11 @@ func _update_boss_pointers() -> void:
 	for e in enemies:
 		if not e.is_boss:
 			continue
-		var edge := _edge_point(e.position)
+		var edge := _edge_point(e.position, POINTER_MARGIN + 40.0)   # 「大弓」兩個字比較寬
 		if edge == Vector2.INF:
 			continue
 		if used >= boss_pointers.size():
-			var g := Glyph.new().setup(e.kind, BULLET_SIZE, e.base_color)
+			var g := Glyph.new().setup(e.kind, POINTER_SIZE, e.base_color)
 			g.modulate.a = 0.8
 			g.z_index = 20
 			add_child(g)
@@ -1994,9 +1996,9 @@ func _update_boss_pointers() -> void:
 
 
 ## target 在畫面外的話，回傳主角往 target 方向碰到畫面邊緣（往內縮一點）的位置；在畫面內回傳 INF
-func _edge_point(target: Vector2) -> Vector2:
+func _edge_point(target: Vector2, margin := 40.0) -> Vector2:
 	var to := target - player.position
-	var half := get_viewport_rect().size / 2.0 - Vector2(40, 40)
+	var half := get_viewport_rect().size / 2.0 - Vector2(margin, margin)
 	if absf(to.x) < half.x and absf(to.y) < half.y:
 		return Vector2.INF
 	var t := minf(half.x / maxf(absf(to.x), 0.001), half.y / maxf(absf(to.y), 0.001))

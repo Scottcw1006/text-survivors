@@ -150,6 +150,9 @@ const SHADE_SPEED := 520.0            # Lv3 以上分身自己衝過去的速度
 const SHADE_LEASH := 540.0            # 分身最遠離開主角多遠（也是 Lv3 以上找敵人的範圍，約 15 格）
 const SHADE_WEAK := 0.5               # Lv1～3 分身傷害倍率
 const EXPLOSION_LINGER := 0.5         # 爆炸的字留在畫面上多久（只打一次）
+# ---------- 蘇生（寶箱卡片，可以重複拿） ----------
+const REVIVE_HP := 25                 # 蘇生後的血量
+const REVIVE_INVINCIBLE := 3.0        # 蘇生後無敵幾秒
 const HEAL_INTERVAL := 25.0          # 每幾秒出現一顆補血愛心
 const HEAL_AMOUNT := 20               # 一顆補多少血
 const HEAL_MAX_ON_MAP := 3            # 地圖上最多同時幾顆（沒撿就不再多生）
@@ -360,6 +363,7 @@ var bullet_lv := 1                 # 強化線「彈」
 var blade_lv := 1                  # 強化線「刀」
 var cannon_lv := 0                 # 強化線「砲」（只有人有，從 Lv0 開始）
 var shadow_lv := 0                 # 強化線「影」（只有刀有，從 Lv0 開始）
+var revives := 0                   # 還有幾次蘇生（寶箱「蘇」卡）
 var shades: Array[Shade] = []      # 影分身
 ## 刀的攻擊從哪裡出、傷害倍率多少：平常是主角本人，影分身出手時暫時換成分身的位置
 var atk_from := Vector2.ZERO
@@ -900,7 +904,26 @@ func _hurt_player(amount: int) -> void:
 	hurt_overlay.color = Color(1, 0, 0, 0.3)
 	if hp <= 0:
 		hp = 0
-		_end(State.DEAD)
+		if revives > 0:
+			_revive()
+		else:
+			_end(State.DEAD)
+
+
+## 蘇生：用掉一次，回到 25 血、3 秒無敵，大大的「蘇」字，把身邊的敵人推開
+func _revive() -> void:
+	revives -= 1
+	hp = mini(REVIVE_HP, max_hp)
+	invincible = REVIVE_INVINCIBLE
+	audio.play("level")
+	hurt_overlay.color = Color(1, 1, 1, 0.35)
+	var p := particles.add("蘇", player.position + Vector2(0, -40), Vector2(0, -30), 1.2, 132, Color(1.0, 0.9, 0.5))
+	p.grow = 0.5
+	for e: Enemy in _nearby_radius(player.position, 160.0):
+		var to := e.position - player.position
+		e.knock += to.normalized() * 600.0 * e.knock_resist
+	_shake(12.0)
+	_update_hud()
 
 
 # ---------- Shift 技能 ----------
@@ -2183,6 +2206,7 @@ func _open_power_up() -> void:
 	for line: String in _lines():
 		if _line_level(line) < LINE_MAX:
 			opts.append(line)
+	opts.append("蘇")   # 蘇生：每次開寶箱都可以選，可以重複拿
 	if opts.is_empty():
 		# 全部都滿了：改成在身邊灑 20 個金（不補血）
 		for i in 20:
@@ -2213,6 +2237,10 @@ func _show_power_up() -> void:
 	var who: String = CHARACTERS[character].glyph
 	var cards := []
 	for line: String in power_choices:
+		if line == "蘇":
+			cards.append({"icon": "蘇", "name": "蘇生", "sub": "持有 %d→%d" % [revives, revives + 1],
+					"desc": "死掉時復活一次，\n回到 %d 血，\n%d 秒無敵\n（可以重複拿）" % [REVIVE_HP, int(REVIVE_INVINCIBLE)]})
+			continue
 		var info: Dictionary = POWER_INFO[who][line]
 		var lv := _line_level(line)
 		cards.append({"icon": line, "name": info.name, "sub": "Lv %d→%d" % [lv, lv + 1], "desc": info.desc[lv + 1]})
@@ -2236,6 +2264,7 @@ func _process_power_up() -> void:
 			"刀": blade_lv += 1
 			"砲": cannon_lv += 1
 			"影": shadow_lv += 1
+			"蘇": revives += 1
 		level_cards.visible = false
 		state = State.PLAYING
 		_update_hud()
@@ -2696,6 +2725,8 @@ func _update_hud() -> void:
 	var line_texts := []
 	for line: String in _lines():
 		line_texts.append("%s Lv%d" % [line, _line_level(line)])
+	if revives > 0:
+		line_texts.append("蘇 ×%d" % revives)
 	hud_power.text = "　".join(line_texts)
 	if final_phase:
 		var counts := {}

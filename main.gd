@@ -780,10 +780,10 @@ func _process_pause() -> void:
 		return
 	var row := pause_menu.cursor
 	if Input.is_action_just_pressed("move_up"):
-		pause_menu.cursor = posmod(row - 1, 3)
+		pause_menu.cursor = posmod(row - 1, PauseMenu.ROW_COUNT)
 		audio.play("ui_move")
 	elif Input.is_action_just_pressed("move_down"):
-		pause_menu.cursor = posmod(row + 1, 3)
+		pause_menu.cursor = posmod(row + 1, PauseMenu.ROW_COUNT)
 		audio.play("ui_move")
 	elif row < 2 and Input.is_action_just_pressed("move_left"):
 		_change_volume("music" if row == 0 else "sfx", -1)
@@ -791,6 +791,9 @@ func _process_pause() -> void:
 		_change_volume("music" if row == 0 else "sfx", 1)
 	elif row == 2 and Input.is_action_just_pressed("confirm"):
 		_set_paused(false)
+		return
+	elif row == 3 and Input.is_action_just_pressed("confirm"):
+		_back_to_select()
 		return
 	pause_menu.queue_redraw()
 
@@ -801,6 +804,12 @@ func _change_volume(which: String, delta: int) -> void:
 	pause_menu.queue_redraw()
 
 
+## 放棄這一局，回到選角畫面（角色、難度、音量都會記得）
+func _back_to_select() -> void:
+	audio.play("ui_ok")
+	get_tree().reload_current_scene()
+
+
 ## 手機點暫停畫面
 func pause_tap(pos: Vector2) -> void:
 	var key := pause_menu.button_at(pos)
@@ -809,6 +818,8 @@ func pause_tap(pos: Vector2) -> void:
 		"music+": pause_menu.cursor = 0; _change_volume("music", 1)
 		"sfx-": pause_menu.cursor = 1; _change_volume("sfx", -1)
 		"sfx+": pause_menu.cursor = 1; _change_volume("sfx", 1)
+		"menu":
+			_back_to_select()
 		"resume":
 			_set_paused(false)
 			_ignore_click_frame = Engine.get_process_frames()   # 這一下點擊不要當成天罰

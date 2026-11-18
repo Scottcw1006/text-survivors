@@ -1,13 +1,14 @@
 class_name PauseMenu
 extends Control
-## 暫停畫面：一個「框」字圍起來的面板，裡面有音樂、音效音量和「繼續」。
+## 暫停畫面：一個「框」字圍起來的面板，裡面有音樂、音效音量、「繼續」和「回選角」。
 ## 鍵盤：W S 選、A D 調整、Space / Enter 在「繼續」上確定、Esc 直接繼續。
 ## 手機：點 ← → 調整音量，點「繼續」回到遊戲。
 
 const CELL := 20.0
 const COLS := 26
-const ROWS := 19
-const ROW_NAMES := ["音樂", "音效", "繼續"]
+const ROWS := 23
+const ROW_NAMES := ["音樂", "音效", "繼續", "回選角"]
+const ROW_COUNT := 4
 const COLOR_ON := Color.WHITE
 const COLOR_DIM := Color(1, 1, 1, 0.45)
 const COLOR_PICK := Color(1.0, 0.85, 0.4)
@@ -68,15 +69,17 @@ func _draw() -> void:
 		_rects[keys[row] + "-"] = _scaled(Rect2(minus - Vector2(36, 32), Vector2(72, 64)), k)
 		_rects[keys[row] + "+"] = _scaled(Rect2(plus - Vector2(36, 32), Vector2(72, 64)), k)
 
-	# 繼續：一個小框按鈕
-	var by := o.y + 300.0
-	var on_resume := cursor == 2
-	var bw := 140.0
-	var br := Rect2(Vector2(mid - bw / 2.0, by - 30.0), Vector2(bw, 60.0))
-	draw_rect(br, Color(1, 1, 1, 0.12) if on_resume else Color.BLACK)
-	draw_rect(br, COLOR_PICK if on_resume else COLOR_DIM, false, 2.0)
-	_text("繼續", Vector2(mid, by), 33, COLOR_PICK if on_resume else COLOR_ON)
-	_rects["resume"] = _scaled(br, k)
+	# 繼續、回選角：小框按鈕
+	for i in 2:
+		var row := 2 + i
+		var by := o.y + 300.0 + i * 80.0
+		var on := cursor == row
+		var bw := 180.0
+		var br := Rect2(Vector2(mid - bw / 2.0, by - 30.0), Vector2(bw, 60.0))
+		draw_rect(br, Color(1, 1, 1, 0.12) if on else Color.BLACK)
+		draw_rect(br, COLOR_PICK if on else COLOR_DIM, false, 2.0)
+		_text(ROW_NAMES[row], Vector2(mid, by), 33, COLOR_PICK if on else COLOR_ON)
+		_rects["resume" if i == 0 else "menu"] = _scaled(br, k)
 
 	var hint := "點 ← → 調整音量" if touch_mode else "W S 選擇　A D 調整　Esc 繼續"
 	_text(hint, Vector2(mid, o.y + h + 36.0), 22, COLOR_DIM)

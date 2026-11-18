@@ -258,7 +258,7 @@ func _draw_options(o: Vector2, h: float, k: float) -> void:
 		var on := i == opt_sel
 		_text(("〔%s〕" if on else "%s") % opt_items[i], Vector2(mid, y), 44 if on else 33, COLOR_PICK if on else COLOR_OFF)
 		opt_rects.append(_scaled(Rect2(o.x + CELL, y - 32.0, w - CELL * 2.0, 64.0), k))
-		y += 56.0
+		y += 46.0
 	if opt_sel < opt_descs.size():
 		var top := y - 10.0
 		var lines := int((o.y + h - CELL * 2.0 - top) / DESC_LINE)

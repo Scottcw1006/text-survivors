@@ -19,6 +19,8 @@ const FLOW_RADIUS := 40           # 尋路範圍（格），要涵蓋畫面外�
 const FLOW_SIZE := FLOW_RADIUS * 2 + 1
 
 var font: Font
+var wall_char := WALL_CHAR       # 地獄難度改成「焰」
+var wall_color := WALL_COLOR
 var font_size := 33
 var noise := FastNoiseLite.new()
 
@@ -161,10 +163,10 @@ func _draw() -> void:
 		for dy in range(-rows, rows + 1):
 			var c := _center_cell + Vector2i(dx, dy)
 			var text := ""
-			var color := WALL_COLOR
+			var color := wall_color
 			var size := font_size
 			if is_wall(c):
-				text = WALL_CHAR
+				text = wall_char
 			else:
 				var h := absi(hash(c))
 				if h % 100 >= GROUND_DENSITY:

@@ -520,6 +520,7 @@ func _ready() -> void:
 	terrain.font = font
 	terrain.font_size = GLYPH_SIZE
 	add_child(terrain)
+	_apply_wall_style()
 
 	character = last_character
 	player = Glyph.new().setup(CHARACTERS[character].glyph, GLYPH_SIZE, COLOR_PLAYER)
@@ -879,12 +880,16 @@ func _show_select() -> void:
 ## 難度：hp = 怪物血量倍率、count = 怪物數量倍率、speed = 移動速度倍率、banned = 不會出現的怪
 const DIFFICULTIES := [
 	{"name": "簡單", "hp": 0.5, "count": 0.5, "speed": 0.7, "banned": ["鳥", "冑", "弩", "魂", "鬼", "犇"],
-		"desc": "怪物血量、數量減半，速度 70%，不會出現進階怪物"},
+		"desc": "怪物減半\n速度 70%\n沒有進階怪"},
 	{"name": "普通", "hp": 1.0, "count": 1.0, "speed": 1.0, "banned": [],
 		"desc": "標準難度"},
 	{"name": "困難", "hp": 1.5, "count": 1.2, "speed": 1.2, "banned": [],
-		"desc": "怪物血量 +50%，數量、速度 +20%"},
+		"desc": "血量 +50%\n數量 +20%\n速度 +20%"},
+	# 地獄：在困難上面再加強；進階怪提早一半時間出現；牆變成會燙人的「焰」
+	{"name": "地獄", "hp": 2.25, "count": 1.44, "speed": 1.44, "banned": [], "unlock": 0.5, "fire_walls": true,
+		"desc": "比困難更強\n進階怪提早\n碰「焰」扣血"},
 ]
+const FIRE_WALL_DAMAGE := 10          # 地獄：碰到「焰」扣幾滴血
 
 
 func set_difficulty(i: int) -> void:
@@ -892,7 +897,16 @@ func set_difficulty(i: int) -> void:
 	if d != difficulty:
 		audio.play("ui_move")
 	difficulty = d
+	_apply_wall_style()
 	_show_select()
+
+
+## 地獄難度：牆變成紅色的「焰」
+func _apply_wall_style() -> void:
+	var fire: bool = DIFFICULTIES[difficulty].get("fire_walls", false)
+	terrain.wall_char = "焰" if fire else Terrain.WALL_CHAR
+	terrain.wall_color = Color(1.0, 0.35, 0.2) if fire else Terrain.WALL_COLOR
+	terrain.queue_redraw()
 
 
 ## 選角畫面下面的操作教學（手機版）
@@ -1082,6 +1096,10 @@ func _check_player_hit(delta: float) -> void:
 		if invincible <= 0.0:
 			player.modulate.a = 1.0
 	if not _player_vulnerable():
+		return
+	# 地獄：碰到「焰」牆就受傷
+	if DIFFICULTIES[difficulty].get("fire_walls", false) and terrain.overlaps_wall(player.position, PLAYER_RADIUS + 3.0):
+		_hurt_player(FIRE_WALL_DAMAGE)
 		return
 	for e: Enemy in _nearby(player.position):
 		if e.position.distance_to(player.position) < PLAYER_RADIUS + e.radius:
@@ -1374,25 +1392,27 @@ func _pick_boss_type() -> String:
 ## 越後面出現的種類越多
 func _pick_enemy_type() -> String:
 	var weights := {"敵": 60.0}
-	if elapsed > 20.0:
+	# 地獄：進階怪的出場時間減半（時間看起來快兩倍）
+	var t := elapsed / float(DIFFICULTIES[difficulty].get("unlock", 1.0))
+	if t > 20.0:
 		weights["鼠"] = 20.0
-	if elapsed > 45.0:
+	if t > 45.0:
 		weights["甲"] = 15.0
-	if elapsed > 75.0:
+	if t > 75.0:
 		weights["弓"] = 15.0
-	if elapsed > 60.0:
+	if t > 60.0:
 		weights["鳥"] = 12.0
-	if elapsed > 100.0:
+	if t > 100.0:
 		weights["冑"] = 10.0
-	if elapsed > 120.0:
+	if t > 120.0:
 		weights["弩"] = 10.0
-	if elapsed > 50.0:
+	if t > 50.0:
 		weights["魂"] = 10.0
-	if elapsed > 110.0:
+	if t > 110.0:
 		weights["鬼"] = 8.0
-	if elapsed > 65.0:
+	if t > 65.0:
 		weights["牛"] = 8.0
-	if elapsed > 130.0:
+	if t > 130.0:
 		weights["犇"] = 6.0
 	for k: String in DIFFICULTIES[difficulty].banned:
 		weights.erase(k)

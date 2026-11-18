@@ -11,6 +11,15 @@ const PLAYER_SPEED := 220.0
 const PLAYER_RADIUS := 14.0
 const BASE_DAMAGE := 10.0           # 斬擊、迴旋刃等的基礎傷害
 const BULLET_DAMAGE := 8.0          # 人的子彈基礎傷害
+# ---------- 牛、犇 ----------
+const CHARGE_RANGE := 300.0           # 多近開始蓄力（約 8 格）
+const CHARGE_WINDUP := 0.8            # 蓄力幾秒
+const CHARGE_SPEED := 620.0           # 衝刺速度
+const CHARGE_OVERSHOOT := 40.0        # 衝到目標點後再多衝一點
+const CHARGE_REST := 0.5              # 衝完喘幾秒
+const CHARGE_COOLDOWN := 2.5          # 衝完之後多久才能再蓄力
+const BLAST_RADIUS := 80.0            # 犇的爆炸半徑
+const BLAST_DAMAGE := 20              # 犇的爆炸傷害
 const ATTACK_PAUSE := 0.3            # 敵人撞到主角之後原地停頓幾秒
 const INVINCIBLE_TIME := 1.0        # 被打後無敵幾秒（避免一碰就連續扣血秒死）
 
@@ -89,6 +98,12 @@ const ENEMY_TYPES := {
 	# 鬼：魂的進階，速度 1.5 倍、無敵三次
 	"鬼": {"hp": 22.5, "speed": 135.0, "radius": 14.0, "size": 33, "damage": 25, "gold": 3,
 		"color": Color(0.4, 0.5, 1.0), "ignores_walls": true, "wobble": true, "shield": 3},
+	# 牛：靠近後蓄力，直線衝向蓄力那一刻玩家的位置，衝刺中不吃擊退
+	"牛": {"hp": 45.0, "speed": 70.0, "radius": 16.0, "size": 33, "damage": 30, "gold": 3,
+		"color": Color(0.75, 0.5, 0.3), "charger": true},
+	# 犇：牛的進階，更大更硬，蓄力時和衝到定點時各炸一圈
+	"犇": {"hp": 120.0, "speed": 65.0, "radius": 22.0, "size": 44, "damage": 40, "gold": 6,
+		"color": Color(0.85, 0.35, 0.2), "charger": true, "blaster": true},
 	"王": {"hp": 600.0, "speed": 70.0, "radius": 28.0, "size": 66, "damage": 50, "gold": 25,
 		"color": Color(1.0, 0.2, 0.2), "ignores_walls": true, "knock_resist": 0.15, "boss": true},
 	# 最終王之一：會穿牆，保持距離一次放 5 支扇形的矢
@@ -687,8 +702,8 @@ func _show_select() -> void:
 
 ## 難度：hp = 怪物血量倍率、count = 怪物數量倍率、speed = 移動速度倍率、banned = 不會出現的怪
 const DIFFICULTIES := [
-	{"name": "簡單", "hp": 0.5, "count": 0.5, "speed": 0.7, "banned": ["鳥", "冑", "弩", "魂", "鬼"],
-		"desc": "怪物血量、數量減半，速度 70%，不會出現鳥冑弩魂鬼"},
+	{"name": "簡單", "hp": 0.5, "count": 0.5, "speed": 0.7, "banned": ["鳥", "冑", "弩", "魂", "鬼", "犇"],
+		"desc": "怪物血量、數量減半，速度 70%，不會出現進階怪物"},
 	{"name": "普通", "hp": 1.0, "count": 1.0, "speed": 1.0, "banned": [],
 		"desc": "標準難度"},
 	{"name": "困難", "hp": 1.5, "count": 1.2, "speed": 1.2, "banned": [],
@@ -1129,6 +1144,10 @@ func _pick_enemy_type() -> String:
 		weights["魂"] = 10.0
 	if elapsed > 110.0:
 		weights["鬼"] = 8.0
+	if elapsed > 65.0:
+		weights["牛"] = 8.0
+	if elapsed > 130.0:
+		weights["犇"] = 6.0
 	for k: String in DIFFICULTIES[difficulty].banned:
 		weights.erase(k)
 	var total := 0.0
@@ -1180,6 +1199,9 @@ func _move_enemies(delta: float) -> void:
 				if e.shoot_cd <= 0.0:
 					e.shoot_cd = e.shoot_interval
 					_shoot_arrow(e)
+		# 牛、犇：蓄力 → 衝刺 → 喘一下
+		if e.charger:
+			vel = _charge_step(e, vel, to_player, delta)
 		# 剛攻擊成功：原地停頓（還是會被推開、擊退）
 		if e.stun > 0.0:
 			e.stun -= delta
@@ -1199,7 +1221,74 @@ func _move_enemies(delta: float) -> void:
 		if e.ignores_walls:
 			e.position += motion
 		else:
+			var before := e.position
 			e.position = terrain.slide(e.position, motion, e.radius)
+			# 衝刺撞到牆就停下來
+			if e.charger and e.charge_state == 2 and e.position.distance_to(before) < motion.length() * 0.3:
+				_end_charge(e)
+
+
+## 牛、犇的狀態：回傳這一幀的移動速度
+func _charge_step(e: Enemy, vel: Vector2, to_player: Vector2, delta: float) -> Vector2:
+	match e.charge_state:
+		0:
+			e.charge_cd -= delta
+			if e.charge_cd <= 0.0 and to_player.length() < CHARGE_RANGE and _line_clear(e.position, player.position):
+				# 開始蓄力：記住玩家現在的位置，之後就衝這裡
+				e.charge_state = 1
+				e.charge_t = CHARGE_WINDUP
+				e.charge_target = player.position
+				e.knock = Vector2.ZERO
+				if e.blaster:
+					_enemy_blast(e)
+				e.queue_redraw()
+			return vel
+		1:
+			e.charge_t -= delta
+			e.offset = Vector2(randf_range(-2, 2), randf_range(-2, 2))   # 蓄力抖動
+			e.queue_redraw()
+			if e.charge_t <= 0.0:
+				e.charge_state = 2
+				e.offset = Vector2.ZERO
+				var to := e.charge_target - e.position
+				e.charge_left = to.length() + CHARGE_OVERSHOOT
+				e.charge_target = to.normalized()   # 衝刺時改存方向
+				e.queue_redraw()
+			return Vector2.ZERO
+		2:
+			e.knock = Vector2.ZERO   # 衝刺中不吃擊退
+			var step := CHARGE_SPEED * delta
+			e.charge_left -= step
+			if e.charge_left <= 0.0:
+				_end_charge(e)
+				return Vector2.ZERO
+			return e.charge_target * CHARGE_SPEED
+		_:
+			e.charge_t -= delta
+			if e.charge_t <= 0.0:
+				e.charge_state = 0
+				e.charge_cd = CHARGE_COOLDOWN
+			return Vector2.ZERO
+
+
+func _end_charge(e: Enemy) -> void:
+	e.charge_state = 3
+	e.charge_t = CHARGE_REST
+	if e.blaster:
+		_enemy_blast(e)
+
+
+## 犇的爆炸：一圈小「爆」，範圍內的玩家受傷
+func _enemy_blast(e: Enemy) -> void:
+	audio.play("explode")
+	var fx := SlashFx.new().setup(randf() * TAU, TAU, BLAST_RADIUS, false)
+	fx.glyph = "爆"
+	fx.color = e.base_color
+	fx.position = e.position
+	fx.z_index = 5
+	add_child(fx)
+	if player.position.distance_to(e.position) < BLAST_RADIUS + PLAYER_RADIUS:
+		_hurt_player(BLAST_DAMAGE)
 
 
 ## 放箭；volley > 1 時一次放一排扇形的箭（大弓）
@@ -1246,7 +1335,8 @@ func _damage_enemy(e: Enemy, amount: float, knock := Vector2.ZERO) -> void:
 			e.position + Vector2(randf_range(-8, 8), -e.radius - 6.0),
 			Vector2(randf_range(-20, 20), -70), 0.45, 33 if boss else 22, Color.WHITE)
 	num.drag = 2.0
-	e.knock = (e.knock + knock * e.knock_resist).limit_length(KNOCK_MAX)
+	if not (e.charger and e.charge_state == 2):   # 牛、犇衝刺中不吃擊退
+		e.knock = (e.knock + knock * e.knock_resist).limit_length(KNOCK_MAX)
 	if e.take_damage(amount):
 		_kill_enemy(e)
 

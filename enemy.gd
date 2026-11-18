@@ -29,6 +29,13 @@ var wobble := false        # 魂、鬼：走路會左右飄
 var wobble_freq := Vector2.ONE   # 兩個不同頻率的正弦疊起來，飄得不規則
 var wobble_phase := Vector2.ZERO
 var age := 0.0
+var charger := false       # 牛、犇：靠近後蓄力，直線衝向蓄力開始時玩家的位置
+var blaster := false       # 犇：蓄力時、衝到定點時各炸一圈
+var charge_state := 0      # 0 一般走路、1 蓄力、2 衝刺、3 衝完喘一下
+var charge_t := 0.0        # 目前這個階段還剩幾秒
+var charge_cd := 0.0       # 下一次可以蓄力的冷卻
+var charge_target := Vector2.ZERO
+var charge_left := 0.0     # 衝刺還剩多遠
 var stun := 0.0             # 撞到主角（攻擊成功）後原地停頓的秒數
 
 var base_color := Color.WHITE
@@ -53,6 +60,9 @@ func setup_type(type_name: String, t: Dictionary, hp_mult: float) -> Enemy:
 	wobble = t.get("wobble", false)
 	wobble_freq = Vector2(randf_range(1.5, 3.0), randf_range(3.5, 6.0))
 	wobble_phase = Vector2(randf() * TAU, randf() * TAU)
+	charger = t.get("charger", false)
+	blaster = t.get("blaster", false)
+	charge_cd = randf_range(0.5, 1.5)
 	_update_ghost()
 	setup(type_name, t["size"], base_color)
 	return self
@@ -99,6 +109,10 @@ func tick(delta: float) -> void:
 
 
 func _draw() -> void:
+	# 蓄力中：往衝刺方向畫一條虛線，玩家看得到牠要衝哪裡
+	if charger and charge_state == 1:
+		var to := charge_target - position
+		draw_dashed_line(Vector2.ZERO, to, Color(base_color, 0.6), 3.0, 12.0)
 	super()
 	# 血比較厚的敵人，受傷後在腳下顯示血條
 	if max_hp >= 30.0 and hp < max_hp:

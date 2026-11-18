@@ -100,7 +100,8 @@ const SPAWN_INTERVAL_END := 0.15    # 三分鐘時幾秒生一隻
 const SPAWN_MARGIN := 60.0          # 在畫面邊緣外多遠生成
 
 # 打擊感
-const KNOCK_BULLET := 160.0         # 子彈打中把敵人往後推多快
+const KNOCK_BULLET := 80.0          # 子彈打中把敵人往後推多快
+const KNOCK_MAX := 300.0            # 擊退速度上限：很多子彈同時打中也不會疊到飛太遠
 const KNOCK_SLASH := 260.0          # 斬擊把敵人往外推多快
 const KNOCK_DECAY := 900.0          # 擊退速度每秒衰減多少
 const SHAKE_DECAY := 40.0           # 畫面震動每秒衰減多少像素
@@ -1043,7 +1044,7 @@ func _damage_enemy(e: Enemy, amount: float, knock := Vector2.ZERO) -> void:
 			e.position + Vector2(randf_range(-8, 8), -e.radius - 6.0),
 			Vector2(randf_range(-20, 20), -70), 0.45, 33 if boss else 22, Color.WHITE)
 	num.drag = 2.0
-	e.knock += knock * e.knock_resist
+	e.knock = (e.knock + knock * e.knock_resist).limit_length(KNOCK_MAX)
 	if e.take_damage(amount):
 		_kill_enemy(e)
 

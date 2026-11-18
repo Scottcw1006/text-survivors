@@ -181,6 +181,7 @@ const SHADE_GAP := 56.0               # 分身跟主角的距離
 const SHADE_SPEED := 520.0            # Lv3 以上分身自己衝過去的速度
 const SHADE_LEASH := 540.0            # 分身最遠離開主角多遠（也是 Lv3 以上找敵人的範圍，約 15 格）
 const SHADE_WEAK := 0.5               # Lv1～3 分身傷害倍率
+const SHADE_SHARE := 0.3              # 分身吃到本體升級（力、廣、疾）的幾成
 const EXPLOSION_LINGER := 0.5         # 爆炸的字留在畫面上多久（只打一次）
 # ---------- 蘇生（寶箱卡片，可以重複拿） ----------
 const REVIVE_HP := 25                 # 蘇生後的血量
@@ -1897,7 +1898,8 @@ func _incoming_arrow(reach: float) -> Vector2:
 
 # ---------- 刀＋影 ----------
 ## Lv1 身後一個分身跟著揮刀（傷害 50%）　Lv2 兩個分身左右各一　Lv3 分身自己衝向附近的敵人
-## Lv4 分身傷害 100%　Lv5 分身繼承本體的攻擊力與招式：刀法、斬擊波、落地震（範圍、攻速不繼承）
+## Lv4 分身傷害 100%　Lv5 分身繼承本體的攻擊力與招式：刀法、斬擊波、落地震（範圍、攻速吃 30%）
+## Lv1～4 範圍、攻速、攻擊力都吃本體升級的 30%
 
 var _atk_stack: Array = []
 
@@ -1959,28 +1961,35 @@ func _move_shade(sh: Shade, delta: float) -> void:
 		sh.node.position = player.position + off.normalized() * SHADE_LEASH
 
 
+## 分身吃到本體升級的 30%：範圍（廣）、攻速（疾）；攻擊力（力）Lv1～4 也只吃 30%，Lv5 吃 100%
+func _shade_share(full_value: float, base: float) -> float:
+	return base + (full_value - base) * SHADE_SHARE
+
+
 func _shade_attack(sh: Shade, delta: float) -> void:
 	var full := shadow_lv >= 5
+	var reach := _shade_share(slash_range, SLASH_RANGE)
+	var interval := SLASH_INTERVAL * _shade_share(attack_mult, 1.0)
 	sh.cd -= delta
 	if sh.cd <= 0.0:
 		_push_atk(sh.node.position, 1.0, SHADE_FX_COLOR)
-		var target := _nearest_visible_enemy(SLASH_RANGE + 14.0)
+		var target := _nearest_visible_enemy(reach + 14.0)
 		if target != null:
+			sh.cd = interval
 			if full and blade_lv >= 1:
-				# Lv5：繼承本體的攻擊力和招式（刀法連擊），但範圍、攻速用基本值
-				sh.cd = SLASH_INTERVAL
+				# Lv5：攻擊力和招式（刀法連擊）完全繼承，範圍、攻速吃 30%
 				var keep := slash_range
-				slash_range = SLASH_RANGE
+				slash_range = reach
 				_slash_at(target.position)
 				slash_range = keep
 			else:
-				# Lv1～4：單純一刀，用基本範圍和基本傷害
-				sh.cd = SLASH_INTERVAL
-				atk_scale = (SHADE_WEAK if shadow_lv < 4 else 1.0) / damage_mult
+				# Lv1～4：單純一刀，範圍、攻速、攻擊力都吃本體升級的 30%
+				var power := _shade_share(damage_mult, 1.0)
+				atk_scale = (SHADE_WEAK if shadow_lv < 4 else 1.0) * power / damage_mult
 				audio.play("slash")
 				var facing := (target.position - atk_from).angle()
-				_hit_sector(atk_from, facing, SLASH_ARC, SLASH_RANGE, true, true)
-				var fx := SlashFx.new().setup(facing, SLASH_ARC, SLASH_RANGE, false)
+				_hit_sector(atk_from, facing, SLASH_ARC, reach, true, true)
+				var fx := SlashFx.new().setup(facing, SLASH_ARC, reach, false)
 				fx.color = SHADE_FX_COLOR
 				fx.position = atk_from
 				fx.z_index = 5
@@ -1992,7 +2001,7 @@ func _shade_attack(sh: Shade, delta: float) -> void:
 		if sh.wave_cd <= 0.0:
 			_push_atk(sh.node.position, 1.0, SHADE_FX_COLOR)
 			if _fire_waves():
-				sh.wave_cd = WAVE_INTERVAL   # 攻速不繼承
+				sh.wave_cd = WAVE_INTERVAL * _shade_share(attack_mult, 1.0)
 			_pop_atk()
 
 

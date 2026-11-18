@@ -239,7 +239,7 @@ const COLOR_RIFT := Color(0.8, 0.6, 1.0)
 ## 說明：卡片一行大約 8 個中文字，用 \n 自己斷行（最多 5 行），才不會斷在詞中間
 const POWER_INFO := {
 	"人": {
-		"彈": {"name": "彈道", "desc": ["", "", "散射 3 發子彈", "散射 5 發，\n角度更廣", "散射 7 發", "散射 9 發，\n扇形 45°"]},
+		"彈": {"name": "彈道", "desc": ["", "自動往最近的\n敵人射子彈", "散射 3 發子彈", "散射 5 發，\n角度更廣", "散射 7 發", "散射 9 發，\n扇形 45°"]},
 		"刀": {"name": "迴旋刃", "desc": ["",
 			"4 把「刃」\n繞身旋轉，\n碰到就砍，\n也能擋下飛來的矢",
 			"雙圈：\n內外兩圈，\n各 4 把",
@@ -254,7 +254,7 @@ const POWER_INFO := {
 			"巨砲：\n兩發中間多一發\n巨砲，飛 10 格\n後大爆炸，\n半徑 10 格"]},
 	},
 	"刀": {
-		"刀": {"name": "刀法", "desc": ["", "",
+		"刀": {"name": "刀法", "desc": ["", "扇形揮砍，\n一次砍多個\n敵人",
 			"連斬：\n反方向再斬一次，\n第二刀大一格",
 			"三連斬：\n連斬後換手再斬，\n一刀比一刀大；\n斬擊可以砍掉\n飛來的矢",
 			"雙刀連斬：\n兩刀像剪刀合起，\n再反過來打開，\n範圍同三連斬\n後兩刀（共四刀）",
@@ -292,8 +292,8 @@ const UPGRADES := [
 
 const CHARACTERS := [
 	# 說明：卡片一行大約 8 個中文字，自己用 \n 斷行，才不會斷在奇怪的地方
-	{"glyph": "人", "name": "遠程射擊", "desc": "自動射向最近敵人\nShift：衝刺六格\n衝刺中與結束後\n1 秒無敵"},
-	{"glyph": "刀", "name": "近身斬擊", "desc": "扇形揮砍\n一次砍多個\nShift：跳五格\n落地震殺周圍敵人"},
+	{"glyph": "人", "name": "遠程型", "desc": "武器：彈道、\n迴旋刃、火砲\nShift：衝刺六格\n衝刺中與結束後\n1 秒無敵"},
+	{"glyph": "刀", "name": "近戰型", "desc": "武器：刀法、\n斬擊波、影分身\nShift：跳五格\n落地震殺周圍敵人"},
 ]
 
 enum State { SELECT, PLAYING, LEVEL_UP, DEAD, WON, POWER_UP, PAUSED, META }
@@ -495,6 +495,7 @@ var touch: TouchControls            # 手機觸控（虛擬搖桿、技/天按�
 var audio: GameAudio                # 音樂與音效
 var pause_menu: PauseMenu           # 暫停畫面（音量設定）
 var meta_menu: MetaMenu             # 鑽石升級畫面
+var start_pick := false             # 開局選武器中（跟寶箱共用卡片畫面）
 var rerolls_left := 0               # 這一局升級時還能重抽幾次
 var tokens_earned := -1             # 這一局拿到幾個 鑽（結算時算一次）
 var _ignore_click_frame := -1       # 點暫停畫面的「繼續」那一格，不要觸發天罰
@@ -730,14 +731,23 @@ func _process_select() -> void:
 	if Input.is_action_just_pressed("confirm"):
 		audio.play("ui_ok")
 		last_character = character
-		if _is_blade():
-			bullet_lv = 0   # 刀一開始沒有斬擊波，第一次拿「彈」就是斬擊波 Lv1
-		else:
-			blade_lv = 0    # 人一開始沒有迴旋刃，第一次拿「刀」就是迴旋刃 Lv1
+		# 一開始沒有任何武器，進遊戲先選一個
+		bullet_lv = 0
+		blade_lv = 0
 		level_cards.visible = false
 		hud_version.visible = false
 		state = State.PLAYING
 		_apply_meta_start()
+		_open_start_weapon()
+
+
+## 開局選武器：這個角色的每一條武器線（都從 Lv0 → Lv1）選一個
+func _open_start_weapon() -> void:
+	start_pick = true
+	power_choices = _lines()
+	power_cursor = 0
+	state = State.POWER_UP
+	_show_power_up()
 
 
 ## 開局套用鑽石升級：一般升級先升好、重抽次數、開局寶箱
@@ -1695,6 +1705,9 @@ func _attack(delta: float) -> void:
 	attack_cd -= delta
 	if attack_cd > 0.0:
 		return
+	# 開局可能沒選這條：沒有刀法就不揮刀、沒有彈道就不開槍
+	if (blade_lv if _is_blade() else bullet_lv) < 1:
+		return
 	if _is_blade():
 		_slash()
 	else:
@@ -1938,7 +1951,7 @@ func _shade_attack(sh: Shade, delta: float) -> void:
 		_push_atk(sh.node.position, 1.0, SHADE_FX_COLOR)
 		var target := _nearest_visible_enemy(SLASH_RANGE + 14.0)
 		if target != null:
-			if full:
+			if full and blade_lv >= 1:
 				# Lv5：繼承本體的攻擊力和招式（刀法連擊），但範圍、攻速用基本值
 				sh.cd = SLASH_INTERVAL
 				var keep := slash_range
@@ -2648,7 +2661,7 @@ func _show_power_up() -> void:
 		var info: Dictionary = POWER_INFO[who][line]
 		var lv := _line_level(line)
 		cards.append({"icon": line, "name": info.name, "sub": "Lv %d→%d" % [lv, lv + 1], "desc": info.desc[lv + 1]})
-	level_cards.show_cards("寶箱！選一個強化", cards, power_cursor, _pick_hint())
+	level_cards.show_cards("選擇你的武器" if start_pick else "寶箱！選一個強化", cards, power_cursor, _pick_hint())
 
 
 func _process_power_up() -> void:
@@ -2669,6 +2682,7 @@ func _process_power_up() -> void:
 			"砲": cannon_lv += 1
 			"影": shadow_lv += 1
 			"蘇": revives += 1
+		start_pick = false
 		level_cards.visible = false
 		state = State.PLAYING
 		_update_hud()
@@ -3305,8 +3319,6 @@ func _final_level_cards() -> Array:
 		var desc: String = info.desc[lv] if lv < info.desc.size() else ""
 		if lv == 0:
 			desc = "沒有拿到"
-		elif desc == "":
-			desc = "基本攻擊"
 		cards.append({"icon": line, "name": info.name, "sub": "Lv %d" % lv, "desc": desc})
 	for u: Dictionary in UPGRADES:
 		var lv: int = upgrade_levels.get(u.id, 0)

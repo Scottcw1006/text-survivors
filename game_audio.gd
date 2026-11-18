@@ -20,6 +20,7 @@ const SFX_SETTINGS := {
 	"gold": [-12.0, 0.04],
 	"block": [-8.0, 0.06],
 	"explode": [-4.0, 0.1],
+	"cannon": [-6.0, 0.05],
 	"ui_move": [-8.0, 0.0],
 }
 

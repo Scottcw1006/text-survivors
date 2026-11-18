@@ -130,6 +130,19 @@ const COLOR_SMITE := Color(0.75, 0.9, 1.0)
 # 寶箱：每 30 秒在附近隨機出現，王死掉也會掉；打開後二選一強化「彈」或「刀」
 const POINTER_SIZE := 66              # 寶箱、王在畫面外時，邊緣提示字的大小
 const POINTER_MARGIN := 60.0          # 提示字離畫面邊緣多遠（字變大了，要往內縮才不會被切掉）
+# ---------- 人＋砲 ----------
+const CANNON_INTERVAL := FIRE_INTERVAL * 4.0   # 射速是一般射擊的四分之一
+const CANNON_SPEED := 420.0
+const CANNON_RANGE := 900.0           # 沒打到東西飛多遠就自己爆
+const CANNON_DAMAGE := 24.0
+const CANNON_RADIUS := 54.0           # Lv1 爆炸半徑（1.5 格），Lv2 ×2、Lv4 再 ×2
+const CANNON_SPREAD := 0.22           # Lv3 以上兩發之間的角度（弧度）
+const CANNON_BIG_DIST := 360.0        # Lv5 巨砲飛 10 格後爆炸
+const CANNON_BIG_RADIUS := 216.0      # 巨砲半徑 6 格
+const CANNON_BIG_MULT := 3.0          # 巨砲傷害倍率
+const CANNON_PIERCE_BONUS := 0.25     # 每一級「穿」讓砲的傷害 +25%
+const COLOR_CANNON := Color(1.0, 0.55, 0.2)
+const EXPLOSION_LINGER := 0.5         # 爆炸的字留在畫面上多久（只打一次）
 const HEAL_INTERVAL := 25.0          # 每幾秒出現一顆補血愛心
 const HEAL_AMOUNT := 20               # 一顆補多少血
 const HEAL_MAX_ON_MAP := 3            # 地圖上最多同時幾顆（沒撿就不再多生）
@@ -190,6 +203,12 @@ const POWER_INFO := {
 			"疾旋：\n一般速度 1 秒、\n加速 1 秒，輪流",
 			"爆旋：\n加速完兩圈\n往外擴大，\n以外圈爆炸一大圈",
 			"刃幕：\n爆炸後往四周\n射出一整圈刃，\n撞牆反彈，\n穿透吃「穿」升級"]},
+		"砲": {"name": "火砲", "desc": ["",
+			"砲擊：\n每 2 秒射一發，\n命中就爆炸；\n「穿」升級\n改成加砲的傷害",
+			"爆炸範圍加倍",
+			"一次射兩發",
+			"爆炸範圍\n再加倍",
+			"巨砲：\n兩發中間多一發\n巨砲，飛 10 格\n後大爆炸，\n半徑 6 格"]},
 	},
 	"刀": {
 		"刀": {"name": "刀法", "desc": ["", "",
@@ -214,7 +233,7 @@ const UPGRADE_MAX_LEVEL := 5
 const UPGRADES := [
 	{"id": "power",  "icon": "力", "name": "攻擊力",   "desc": "傷害 +20%", "who": "all"},
 	{"id": "haste",  "icon": "疾", "name": "攻擊速度", "desc": "攻擊速度 +15%", "who": "all"},
-	{"id": "pierce", "icon": "穿", "name": "穿透",     "desc": "子彈多穿過\n1 個敵人", "who": "人"},
+	{"id": "pierce", "icon": "穿", "name": "穿透",     "desc": "子彈多穿過\n1 個敵人；\n砲傷害 +25%", "who": "人"},
 	{"id": "reach",  "icon": "廣", "name": "斬擊範圍", "desc": "斬擊距離 +20%", "who": "刀"},
 	{"id": "speed",  "icon": "速", "name": "移動速度", "desc": "移動速度 +12%", "who": "all"},
 	{"id": "vital",  "icon": "體", "name": "體魄",     "desc": "每秒回 0.1 血", "who": "all"},
@@ -238,6 +257,17 @@ class Bullet:
 	var pierce: int                 # 還能再穿過幾個敵人
 	var damage: float
 	var hits: Array = []            # 已經打過的敵人，穿透時不重複打
+
+
+## 人＋砲：飛行中的砲彈
+class Shell:
+	var node: Glyph
+	var vel: Vector2
+	var traveled := 0.0
+	var max_dist := 0.0
+	var radius := 0.0           # 爆炸半徑
+	var damage := 0.0
+	var big := false            # Lv5 中間那發巨砲：不撞敵人、不撞牆，飛到定點才爆炸
 
 
 class Chest:
@@ -305,6 +335,9 @@ var power_choices: Array = []      # 寶箱卡片上的選項（"彈" / "刀"）
 var power_cursor := 0
 var bullet_lv := 1                 # 強化線「彈」
 var blade_lv := 1                  # 強化線「刀」
+var cannon_lv := 0                 # 強化線「砲」（只有人有，從 Lv0 開始）
+var cannon_cd := 0.0
+var shells: Array[Shell] = []
 var combo: Array = []              # 刀＋刀：排好的後續連擊
 var zones: Array[Zone] = []
 var wave_cd := 0.0
@@ -1214,6 +1247,8 @@ func _attack(delta: float) -> void:
 		_update_combo(delta)
 		_update_zones(delta)
 		_update_blade_shots(delta)
+	else:
+		_update_cannon(delta)
 	attack_cd -= delta
 	if attack_cd > 0.0:
 		return
@@ -1275,6 +1310,87 @@ func _move_bullets(delta: float) -> void:
 		if done or b.life <= 0.0:
 			b.node.queue_free()
 			bullets.remove_at(i)
+
+
+# ---------- 人＋砲 ----------
+## Lv1 一發，命中爆炸（爆炸只打一次，「爆」字留一下）　Lv2 範圍 ×2　Lv3 兩發　Lv4 範圍再 ×2
+## Lv5 兩發中間再夾一發巨砲：飛 10 格後大爆炸（半徑 6 格、傷害 ×3）
+func _update_cannon(delta: float) -> void:
+	_move_shells(delta)
+	if cannon_lv < 1:
+		return
+	cannon_cd -= delta
+	if cannon_cd > 0.0:
+		return
+	var target := _nearest_visible_enemy(AIM_RANGE)
+	if target == null:
+		return
+	cannon_cd = CANNON_INTERVAL * attack_mult
+	audio.play("cannon")
+	var dir := (target.position - player.position).normalized()
+	var radius := CANNON_RADIUS * (2.0 if cannon_lv >= 2 else 1.0) * (2.0 if cannon_lv >= 4 else 1.0)
+	var dmg := CANNON_DAMAGE * damage_mult * (1.0 + CANNON_PIERCE_BONUS * bullet_pierce)
+	if cannon_lv >= 3:
+		_launch_shell(dir.rotated(-CANNON_SPREAD / 2.0), radius, dmg, false)
+		_launch_shell(dir.rotated(CANNON_SPREAD / 2.0), radius, dmg, false)
+	else:
+		_launch_shell(dir, radius, dmg, false)
+	if cannon_lv >= 5:
+		_launch_shell(dir, CANNON_BIG_RADIUS, dmg * CANNON_BIG_MULT, true)
+
+
+func _launch_shell(dir: Vector2, radius: float, dmg: float, big: bool) -> void:
+	var s := Shell.new()
+	s.node = Glyph.new().setup("砲", 44 if big else BULLET_SIZE, COLOR_CANNON)
+	s.node.position = player.position + dir * MUZZLE_DIST
+	s.node.z_index = 4
+	s.vel = dir * CANNON_SPEED * (0.8 if big else 1.0)
+	s.max_dist = CANNON_BIG_DIST if big else CANNON_RANGE
+	s.radius = radius
+	s.damage = dmg
+	s.big = big
+	add_child(s.node)
+	shells.append(s)
+
+
+func _move_shells(delta: float) -> void:
+	for i in range(shells.size() - 1, -1, -1):
+		var s := shells[i]
+		var step := s.vel * delta
+		s.node.position += step
+		s.traveled += step.length()
+		var boom := s.traveled >= s.max_dist
+		if not s.big and not boom:
+			# 一般砲彈：撞到牆或敵人就爆
+			boom = terrain.is_wall(terrain.cell_of(s.node.position))
+			if not boom:
+				for e: Enemy in _nearby(s.node.position):
+					if e.position.distance_to(s.node.position) < BULLET_RADIUS + e.radius:
+						boom = true
+						break
+		if boom:
+			_explode(s.node.position, s.radius, s.damage, s.big)
+			s.node.queue_free()
+			shells.remove_at(i)
+
+
+## 爆炸：範圍內的敵人各打一次、往外推；「爆」字一圈，留一下再淡掉
+func _explode(pos: Vector2, radius: float, dmg: float, big: bool) -> void:
+	audio.play("explode")
+	for e: Enemy in _nearby_radius(pos, radius + 30.0):
+		var to := e.position - pos
+		if to.length() <= radius + e.radius:
+			_damage_enemy(e, dmg, to.normalized() * KNOCK_SLASH)
+	var fx := SlashFx.new().setup(randf() * TAU, TAU, radius, false)
+	fx.glyph = "爆"
+	fx.linger = EXPLOSION_LINGER
+	fx.color = COLOR_CANNON
+	fx.position = pos
+	fx.z_index = 5
+	add_child(fx)
+	_shake(10.0 if big else 4.0)
+	if big:
+		_hitstop(0.05)
 
 
 ## 朝最近的敵人揮刀。刀法等級決定這一次攻擊是幾連擊、什麼形狀
@@ -1901,12 +2017,11 @@ func _open_chest(c: Chest) -> void:
 func _open_power_up() -> void:
 	pending_power -= 1
 	var opts := []
-	if bullet_lv < LINE_MAX:
-		opts.append("彈")
-	if blade_lv < LINE_MAX:
-		opts.append("刀")
+	for line: String in _lines():
+		if _line_level(line) < LINE_MAX:
+			opts.append(line)
 	if opts.is_empty():
-		# 兩條線都滿了：改成在身邊灑 20 個金（不補血）
+		# 全部都滿了：改成在身邊灑 20 個金（不補血）
 		for i in 20:
 			_drop_gold(player.position + Vector2.from_angle(randf() * TAU) * randf_range(20.0, 60.0))
 		return
@@ -1918,7 +2033,16 @@ func _open_power_up() -> void:
 
 
 func _line_level(line: String) -> int:
-	return bullet_lv if line == "彈" else blade_lv
+	match line:
+		"彈": return bullet_lv
+		"刀": return blade_lv
+		"砲": return cannon_lv
+	return 0
+
+
+## 這個角色有哪幾條強化線
+func _lines() -> Array:
+	return ["彈", "刀"] if _is_blade() else ["彈", "刀", "砲"]
 
 
 func _show_power_up() -> void:
@@ -1943,10 +2067,10 @@ func _process_power_up() -> void:
 		_show_power_up()
 	if Input.is_action_just_pressed("confirm"):
 		audio.play("ui_ok")
-		if power_choices[power_cursor] == "彈":
-			bullet_lv += 1
-		else:
-			blade_lv += 1
+		match power_choices[power_cursor]:
+			"彈": bullet_lv += 1
+			"刀": blade_lv += 1
+			"砲": cannon_lv += 1
 		level_cards.visible = false
 		state = State.PLAYING
 		_update_hud()
@@ -2404,7 +2528,10 @@ func _update_hud() -> void:
 		player_bar.queue_redraw()
 	if touch != null and is_touch:
 		touch.refresh()
-	hud_power.text = "彈 Lv%d　刀 Lv%d" % [bullet_lv, blade_lv]
+	var line_texts := []
+	for line: String in _lines():
+		line_texts.append("%s Lv%d" % [line, _line_level(line)])
+	hud_power.text = "　".join(line_texts)
 	if final_phase:
 		var counts := {}
 		for b in final_bosses:
@@ -2460,7 +2587,7 @@ func _kill_rows() -> Array:
 func _final_level_cards() -> Array:
 	var who: String = CHARACTERS[character].glyph
 	var cards := []
-	for line: String in ["彈", "刀"]:
+	for line: String in _lines():
 		var info: Dictionary = POWER_INFO[who][line]
 		var lv := _line_level(line)
 		var desc: String = info.desc[lv] if lv < info.desc.size() else ""

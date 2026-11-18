@@ -4,7 +4,7 @@ extends Node2D
 ## 像刀鋒從一邊掃到另一邊，掃過的字亮起後淡出。
 ## 斬字是一圈一圈排的，範圍變大時圈數和每圈的字數都會跟著變多。
 
-const CHAR := "斬"
+var glyph := "斬"          # 畫哪個字（砲的爆炸用「爆」）
 const FONT_SIZE := 22
 const SPACING := 24.0          # 字與字的間距，決定斬字密度
 const INNER := 30.0            # 最內圈離主角多遠（避開主角本身）
@@ -62,7 +62,7 @@ func _draw() -> void:
 	var sweep := clampf(_time / SWEEP_TIME, 0.0, 1.0)
 	var ascent := font.get_ascent(FONT_SIZE)
 	var height := font.get_height(FONT_SIZE)
-	var w := font.get_string_size(CHAR, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x
+	var w := font.get_string_size(glyph, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x
 	for m: Dictionary in _marks:
 		var t: float = m.t if clockwise else 1.0 - m.t
 		if t > sweep:
@@ -81,5 +81,5 @@ func _draw() -> void:
 		if not m.edge:
 			alpha *= 0.55
 		var p: Vector2 = m.pos
-		draw_string(font, Vector2(p.x - w / 2.0, p.y + ascent - height / 2.0), CHAR,
+		draw_string(font, Vector2(p.x - w / 2.0, p.y + ascent - height / 2.0), glyph,
 				HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, Color(color, alpha))

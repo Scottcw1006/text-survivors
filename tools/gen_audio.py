@@ -372,6 +372,7 @@ SFX = {   # 音色以正弦、撥弦、鐘聲為主，比較乾淨，跟 Lo-fi �
     "gold": lambda: arpeggio([n("E6"), n("B6")], 0.045),
     "level": lambda: arpeggio([n("C5"), n("E5"), n("G5"), n("C6")], 0.045, tail=0.12),   # 短促俐落
     "chest": lambda: arpeggio([n("G5"), n("B5"), n("D6"), n("G6"), n("B6"), n("D7")], 0.06, tail=0.4),
+    "cannon": lambda: layer((tone(160, 0.18, "sine", f1=70), 0.9), (noise(0.12, 2, 17, 1.5, 0.2), 0.5)),
     "heal": lambda: arpeggio([n("A5"), n("C#6"), n("E6"), n("A6")], 0.04, tail=0.15),
     "pick": lambda: arpeggio([n("C6"), n("G6")], 0.06),
     "hurt": lambda: layer((tone(240, 0.24, "sine", f1=110), 0.8), (noise(0.16, 2, 6, 1.5, 0.15), 0.5)),

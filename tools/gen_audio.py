@@ -318,6 +318,33 @@ def make_final():
 
 # ---------- 音效 ----------
 
+def partials(fs, length, decay, amps=None):
+    """幾個不成倍數的泛音疊在一起 = 金屬聲；decay 越小消失越快"""
+    amps = amps or [1.0] * len(fs)
+    out = []
+    for i in range(int(length * RATE)):
+        t = i / RATE
+        s = sum(a * math.sin(2 * math.pi * f * t) * math.exp(-t / (decay * (1 + 0.3 * k)))
+                for k, (f, a) in enumerate(zip(fs, amps)))
+        out.append(s * min(1.0, t / 0.001) / len(fs))
+    return out
+
+
+def hp_noise(length, seed, sweep_from=0.6, sweep_to=0.15, decay=1.5):
+    """高頻的「唰」：雜訊減掉它的低頻部分，濾波器從亮掃到暗"""
+    rng = random.Random(seed)
+    out = []
+    lp = 0.0
+    total = int(length * RATE)
+    for i in range(total):
+        k = i / total
+        x = rng.uniform(-1, 1)
+        a = sweep_from + (sweep_to - sweep_from) * k
+        lp += (x - lp) * a
+        out.append((x - lp) * (1 - k) ** decay)
+    return out
+
+
 def arpeggio(notes, step, kind="bell", duty=0.5, tail=0.0):
     buf = [0.0] * int((len(notes) * step + tail + 0.05) * RATE)
     for i, note in enumerate(notes):
@@ -336,7 +363,9 @@ def layer(*parts):
 
 SFX = {   # 音色以正弦、撥弦、鐘聲為主，比較乾淨，跟 Lo-fi 音樂搭
     "shoot": lambda: tone(880, 0.07, "pluck", f1=620),
-    "slash": lambda: layer((noise(0.13, 1, 5, 1.6, 0.18), 0.8), (tone(520, 0.1, "sine", f1=260), 0.3)),
+    # 劍鳴：唰一聲之後留一點「嗡～」的金屬餘音
+    "slash": lambda: layer((hp_noise(0.12, 5, 0.7, 0.2), 0.7),
+                           (partials([1870, 2960, 4410, 5830], 0.35, 0.09, [1.0, 0.7, 0.5, 0.3]), 0.6)),
     "wave": lambda: layer((tone(330, 0.16, "sine", f1=660), 0.5), (noise(0.14, 1, 9, 1.8, 0.15), 0.5)),
     "hit": lambda: layer((tone(260, 0.05, "sine", f1=160), 0.7), (noise(0.04, 1, 2, 2.0, 0.2), 0.4)),
     "kill": lambda: layer((tone(520, 0.14, "pluck", f1=260), 0.6), (noise(0.1, 1, 4, 2.0, 0.15), 0.4)),
@@ -361,8 +390,9 @@ SFX = {   # 音色以正弦、撥弦、鐘聲為主，比較乾淨，跟 Lo-fi �
     "explode": lambda: layer((noise(0.5, 2, 13, 1.6, 0.1), 0.9), (tone(90, 0.45, "sine", f1=35), 0.9)),
     "win": lambda: arpeggio([n("C5"), n("E5"), n("G5"), n("C6"), n("G5"), n("C6"), n("E6")], 0.13, tail=0.9),
     "lose": lambda: arpeggio([n("E5"), n("C5"), n("A4"), n("E4"), n("A3")], 0.22, "pluck", tail=0.9),
-    "ui_move": lambda: tone(880, 0.06, "pluck"),
-    "ui_ok": lambda: arpeggio([n("E5"), n("B5")], 0.06),
+    # 選單：高音木琴
+    "ui_move": lambda: layer((tone(freq(n("C7")), 0.08, "pluck"), 0.8), (tone(freq(n("C8")), 0.05, "pluck"), 0.3)),
+    "ui_ok": lambda: arpeggio([n("G6"), n("C7"), n("G7")], 0.035, "pluck"),
     "pause": lambda: arpeggio([n("B5"), n("E5")], 0.07),
 }
 

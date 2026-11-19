@@ -47,6 +47,16 @@ var charge_t := 0.0        # 目前這個階段還剩幾秒
 var charge_cd := 0.0       # 下一次可以蓄力的冷卻
 var charge_target := Vector2.ZERO
 var charge_left := 0.0     # 衝刺還剩多遠
+var hell := false          # 地獄難度的強化版（只有小兵）
+var hell_t := 0.0          # 地獄行為用的計時（敵的衝刺、鳥的繞圈、鬼的隱形）
+var hell_state := 0        # 地獄行為的階段
+var flank := 0.0           # 地獄鼠：包抄時往哪一側偏（-1 ~ 1）
+var armor_t := 0.0         # 地獄甲：被打後這段時間減傷
+var windup := 0.8          # 這一次蓄力總共幾秒（牛、犇）
+var windup_mult := 1.0     # 地獄牛：蓄力時間倍率
+var overshoot := 40.0      # 衝到目標點後再多衝多遠
+var fire_trail := false    # 地獄犇：衝刺路線留下焰
+var trail_left := 0.0
 var stun := 0.0             # 撞到主角（攻擊成功）後原地停頓的秒數
 
 var base_color := Color.WHITE

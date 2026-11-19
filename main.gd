@@ -301,6 +301,7 @@ enum State { SELECT, PLAYING, LEVEL_UP, DEAD, WON, POWER_UP, PAUSED, META }
 
 
 class Bullet:
+	var homing := false             # 地獄弩：會慢慢轉向追蹤主角
 	var node: Glyph
 	var vel: Vector2
 	var life: float
@@ -496,6 +497,8 @@ var touch: TouchControls            # 手機觸控（虛擬搖桿、技/天按�
 var audio: GameAudio                # 音樂與音效
 var pause_menu: PauseMenu           # 暫停畫面（音量設定）
 var meta_menu: MetaMenu             # 鑽石升級畫面
+var _smiting := false                # 天罰清怪中（地獄冑不爆炸）
+var hazards: Array = []             # 地獄犇留下的焰：[{node, life}]
 var start_pick := false             # 開局選武器中（跟寶箱共用卡片畫面）
 var rerolls_left := 0               # 這一局升級時還能重抽幾次
 var tokens_earned := -1             # 這一局拿到幾個 鑽（結算時算一次）
@@ -633,6 +636,7 @@ func _process(delta: float) -> void:
 	_spawn_enemies(delta)
 	_build_grid()
 	_move_enemies(delta)
+	_update_hazards(delta)
 	_build_grid()
 	_attack(delta)
 	_move_bullets(delta)
@@ -878,10 +882,33 @@ const DIFFICULTIES := [
 	{"name": "困難", "hp": 1.5, "count": 1.2, "speed": 1.2, "banned": [],
 		"desc": "血量 +50%\n數量 +20%\n速度 +20%"},
 	# 地獄：在困難上面再加強；進階怪提早一半時間出現；牆變成會燙人的「焰」
-	{"name": "地獄", "hp": 2.25, "count": 1.44, "speed": 1.44, "banned": [], "unlock": 0.5, "fire_walls": true,
+	{"name": "地獄", "hp": 2.25, "count": 1.44, "speed": 1.44, "banned": [], "unlock": 0.5, "fire_walls": true, "hell": true,
 		"desc": "比困難更強\n進階怪提早\n碰「焰」扣血"},
 ]
 const FIRE_WALL_DAMAGE := 10          # 地獄：碰到「焰」扣幾滴血
+# ---------- 地獄難度：每種小兵的行為加強（王不受影響） ----------
+const HELL_RAT_GROUP := 6             # 鼠一群 6 隻，往兩側包抄
+const HELL_FLANK := 0.7               # 鼠包抄的橫向力道
+const HELL_DASH_EVERY := Vector2(2.5, 5.0)   # 敵：每隔幾秒（隨機）突然衝一下
+const HELL_DASH_TIME := 0.35
+const HELL_DASH_MULT := 2.6
+const HELL_ARMOR_TIME := 1.0          # 甲：被打後 1 秒內減傷 50%
+const HELL_ARMOR_MULT := 0.5
+const HELL_BOW_VOLLEY := 3            # 弓：一次 3 支扇形
+const HELL_BOW_SPREAD := 0.45
+const HELL_BIRD_ORBIT := 220.0        # 鳥：在這個距離繞圈
+const HELL_BIRD_ORBIT_TIME := Vector2(1.0, 2.0)
+const HELL_BIRD_DIVE_TIME := 0.55
+const HELL_BIRD_DIVE_MULT := 1.6
+const HELL_HOMING_TURN := 1.6         # 弩：矢每秒最多轉幾弧度追蹤
+const HELL_SOUL_SHIELD := 2           # 魂：無敵 2 次
+const HELL_GHOST_EVERY := 3.5         # 鬼：每隔幾秒隱形
+const HELL_GHOST_TIME := 1.5          # 隱形多久
+const HELL_COW_WINDUP := 0.5          # 牛：蓄力時間 ×0.5
+const HELL_COW_OVERSHOOT := 200.0     # 牛：衝過頭的距離（原本 40）
+const HELL_TRAIL_GAP := 30.0          # 犇：每衝多遠留一個焰
+const HELL_TRAIL_TIME := 2.0          # 焰留幾秒
+const HELL_TRAIL_DAMAGE := 10
 
 
 func set_difficulty(i: int) -> void:
@@ -1299,7 +1326,10 @@ func _spawn_enemies(delta: float) -> void:
 		return
 	var kind := _pick_enemy_type()
 	if kind == "鼠" or kind == "鳥":
-		for i in (RAT_GROUP if kind == "鼠" else BIRD_GROUP):
+		var group := RAT_GROUP if kind == "鼠" else BIRD_GROUP
+		if kind == "鼠" and DIFFICULTIES[difficulty].get("hell", false):
+			group = HELL_RAT_GROUP
+		for i in group:
 			var p := pos + Vector2(randf_range(-12, 12), randf_range(-12, 12))
 			if terrain.overlaps_wall(p, ENEMY_TYPES[kind]["radius"]):
 				p = pos
@@ -1432,8 +1462,33 @@ func _spawn_enemy(kind: String, pos: Vector2) -> void:
 	e.shoot_interval = ARROW_INTERVAL
 	e.arrow_speed = ARROW_SPEED
 	e.shoot_cd = randf() * ARROW_INTERVAL
+	if DIFFICULTIES[difficulty].get("hell", false):
+		_make_hell(e)
 	add_child(e)
 	enemies.append(e)
+
+
+## 地獄難度：小兵的行為加強
+func _make_hell(e: Enemy) -> void:
+	e.hell = true
+	e.hell_t = randf_range(HELL_DASH_EVERY.x, HELL_DASH_EVERY.y)
+	match e.kind:
+		"鼠":
+			e.flank = randf_range(-1.0, 1.0)
+		"弓":
+			e.volley = HELL_BOW_VOLLEY
+		"魂":
+			e.shield = HELL_SOUL_SHIELD
+			e.shield_max = HELL_SOUL_SHIELD
+		"鬼":
+			e.hell_t = randf() * HELL_GHOST_EVERY
+		"牛":
+			e.windup_mult = HELL_COW_WINDUP
+			e.overshoot = HELL_COW_OVERSHOOT
+		"犇":
+			e.fire_trail = true
+		"鳥":
+			e.hell_t = randf_range(HELL_BIRD_ORBIT_TIME.x, HELL_BIRD_ORBIT_TIME.y)
 
 
 func _move_enemies(delta: float) -> void:
@@ -1466,6 +1521,8 @@ func _move_enemies(delta: float) -> void:
 		else:
 			# 照尋路結果走，會繞過牆
 			vel = terrain.flow_direction(e.position, player.position) * e.speed
+		if e.hell:
+			vel = _hell_move(e, vel, to_player, delta)
 		# 弓：夠近又看得到你，就停下來放箭
 		if e.ranged:
 			e.shoot_cd -= delta
@@ -1515,7 +1572,8 @@ func _charge_step(e: Enemy, vel: Vector2, to_player: Vector2, delta: float) -> V
 			if e.charge_cd <= 0.0 and to_player.length() < CHARGE_RANGE and _line_clear(e.position, player.position):
 				# 開始蓄力：記住玩家現在的位置，之後就衝這裡
 				e.charge_state = 1
-				e.charge_t = CHARGE_WINDUP
+				e.charge_t = CHARGE_WINDUP * e.windup_mult
+				e.windup = e.charge_t
 				e.dashes_left = e.dashes
 				e.charge_target = player.position
 				e.knock = Vector2.ZERO
@@ -1527,7 +1585,7 @@ func _charge_step(e: Enemy, vel: Vector2, to_player: Vector2, delta: float) -> V
 			var before := e.charge_t
 			e.charge_t -= delta
 			# 像鬥牛：原地踩兩下（抬起來、重重踩下），然後才衝
-			var k := 1.0 - e.charge_t / CHARGE_WINDUP   # 0 → 1
+			var k := 1.0 - e.charge_t / e.windup   # 0 → 1
 			var hop := 0.0
 			for st in STOMP_TIMES:
 				var d: float = (k - st) / STOMP_LEN
@@ -1535,7 +1593,7 @@ func _charge_step(e: Enemy, vel: Vector2, to_player: Vector2, delta: float) -> V
 					hop = maxf(hop, sin((d + 1.0) * PI))   # 抬腳
 			e.offset = Vector2(0, -STOMP_HEIGHT * hop)
 			for st in STOMP_TIMES:
-				var t_hit: float = CHARGE_WINDUP * (1.0 - st)
+				var t_hit: float = e.windup * (1.0 - st)
 				if before > t_hit and e.charge_t <= t_hit:
 					_stomp_dust(e)
 			e.queue_redraw()
@@ -1543,7 +1601,8 @@ func _charge_step(e: Enemy, vel: Vector2, to_player: Vector2, delta: float) -> V
 				e.charge_state = 2
 				e.offset = Vector2.ZERO
 				var to := e.charge_target - e.position
-				e.charge_left = to.length() + CHARGE_OVERSHOOT
+				e.charge_left = to.length() + e.overshoot
+				e.trail_left = 0.0
 				e.charge_target = to.normalized()   # 衝刺時改存方向
 				e.queue_redraw()
 			return Vector2.ZERO
@@ -1551,6 +1610,11 @@ func _charge_step(e: Enemy, vel: Vector2, to_player: Vector2, delta: float) -> V
 			e.knock = Vector2.ZERO   # 衝刺中不吃擊退
 			var step := CHARGE_SPEED * delta
 			e.charge_left -= step
+			if e.fire_trail:
+				e.trail_left -= step
+				if e.trail_left <= 0.0:
+					e.trail_left = HELL_TRAIL_GAP
+					_drop_fire(e.position)
 			if e.charge_left <= 0.0:
 				_end_charge(e)
 				return Vector2.ZERO
@@ -1582,6 +1646,7 @@ func _end_charge(e: Enemy) -> void:
 		e.dashes_left -= 1
 		e.charge_state = 1
 		e.charge_t = CHARGE_WINDUP * 0.45
+		e.windup = e.charge_t
 		e.charge_target = player.position
 		return
 	e.charge_state = 3
@@ -1619,11 +1684,91 @@ func _soul_aura(src: Enemy) -> void:
 	_add_fx(fx, AURA_TIME)
 
 
+## 地獄難度的移動加強，回傳這一幀的速度
+func _hell_move(e: Enemy, vel: Vector2, to_player: Vector2, delta: float) -> Vector2:
+	match e.kind:
+		"敵":
+			# 每隔幾秒突然衝一下
+			e.hell_t -= delta
+			if e.hell_state == 1:
+				if e.hell_t <= 0.0:
+					e.hell_state = 0
+					e.hell_t = randf_range(HELL_DASH_EVERY.x, HELL_DASH_EVERY.y)
+				return vel * HELL_DASH_MULT
+			if e.hell_t <= 0.0 and to_player.length() < 500.0:
+				e.hell_state = 1
+				e.hell_t = HELL_DASH_TIME
+				var dust := particles.add("！", e.position + Vector2(0, -e.radius - 10.0), Vector2(0, -40), 0.35, 22, e.base_color)
+				dust.drag = 2.0
+		"鼠":
+			# 從兩側包抄：離得遠時往旁邊偏，靠近了才直衝
+			if to_player.length() > 140.0:
+				vel += to_player.normalized().orthogonal() * e.flank * e.speed * HELL_FLANK
+		"甲":
+			e.armor_t = maxf(0.0, e.armor_t - delta)
+		"鳥":
+			# 先在你周圍繞圈，再突然俯衝
+			e.hell_t -= delta
+			var d := to_player.length()
+			if e.hell_state == 0:
+				if d < HELL_BIRD_ORBIT * 1.4:
+					var dir := to_player.normalized()
+					var radial := dir * (d - HELL_BIRD_ORBIT) / HELL_BIRD_ORBIT
+					vel = (dir.orthogonal() + radial).normalized() * e.speed
+					if e.hell_t <= 0.0:
+						e.hell_state = 1
+						e.hell_t = HELL_BIRD_DIVE_TIME
+			else:
+				vel = to_player.normalized() * e.speed * HELL_BIRD_DIVE_MULT
+				if e.hell_t <= 0.0:
+					e.hell_state = 0
+					e.hell_t = randf_range(HELL_BIRD_ORBIT_TIME.x, HELL_BIRD_ORBIT_TIME.y)
+		"鬼":
+			# 每隔幾秒隱形一下，只剩淡淡的影子
+			e.hell_t += delta
+			var cycle := fmod(e.hell_t, HELL_GHOST_EVERY + HELL_GHOST_TIME)
+			var hidden := cycle >= HELL_GHOST_EVERY
+			var a := 0.1 if hidden else (0.6 if e.shield > 0 else 1.0)
+			if absf(e.modulate.a - a) > 0.01:
+				e.modulate.a = move_toward(e.modulate.a, a, delta * 4.0)
+	return vel
+
+
+## 地獄冑：死掉時炸一圈
+func _hell_death(e: Enemy) -> void:
+	if e.hell and e.kind == "冑" and not _smiting:   # 天罰清掉的不會炸
+		_enemy_blast(e)
+
+
+## 地獄犇：衝刺路線上留下焰
+func _drop_fire(pos: Vector2) -> void:
+	var g := Glyph.new().setup("焰", BULLET_SIZE + 11, Color(1.0, 0.4, 0.15))
+	g.position = pos
+	g.z_index = 1
+	add_child(g)
+	hazards.append({"node": g, "life": HELL_TRAIL_TIME})
+
+
+func _update_hazards(delta: float) -> void:
+	for i in range(hazards.size() - 1, -1, -1):
+		var h: Dictionary = hazards[i]
+		h.life -= delta
+		var g: Glyph = h.node
+		g.modulate.a = clampf(h.life / 0.5, 0.0, 1.0)
+		if h.life <= 0.0:
+			g.queue_free()
+			hazards.remove_at(i)
+			continue
+		if _player_vulnerable() and g.position.distance_to(player.position) < PLAYER_RADIUS + 14.0:
+			_hurt_player(HELL_TRAIL_DAMAGE)
+
+
 ## 放箭；volley > 1 時一次放一排扇形的箭（大弓）
 func _shoot_arrow(e: Enemy) -> void:
 	var dir := (player.position - e.position).normalized()
 	for k in e.volley:
-		var offset := 0.0 if e.volley == 1 else -VOLLEY_SPREAD / 2.0 + VOLLEY_SPREAD * k / (e.volley - 1)
+		var spread := HELL_BOW_SPREAD if e.hell else VOLLEY_SPREAD
+		var offset := 0.0 if e.volley == 1 else -spread / 2.0 + spread * k / (e.volley - 1)
 		var b := Bullet.new()
 		b.node = Glyph.new().setup("矢", BULLET_SIZE, COLOR_ARROW)
 		b.node.position = e.position
@@ -1631,6 +1776,7 @@ func _shoot_arrow(e: Enemy) -> void:
 		b.vel = dir.rotated(offset) * e.arrow_speed
 		b.life = ARROW_LIFETIME
 		b.damage = ARROW_DAMAGE
+		b.homing = e.hell and e.kind == "弩"
 		add_child(b.node)
 		arrows.append(b)
 
@@ -1638,6 +1784,11 @@ func _shoot_arrow(e: Enemy) -> void:
 func _move_arrows(delta: float) -> void:
 	for i in range(arrows.size() - 1, -1, -1):
 		var b := arrows[i]
+		if b.homing:
+			var want := (player.position - b.node.position).angle()
+			var now := b.vel.angle()
+			var turn := clampf(angle_difference(now, want), -HELL_HOMING_TURN * delta, HELL_HOMING_TURN * delta)
+			b.vel = b.vel.rotated(turn)
 		b.node.position += b.vel * delta
 		b.life -= delta
 		var done := b.life <= 0.0 or terrain.is_wall(terrain.cell_of(b.node.position))
@@ -1659,6 +1810,11 @@ func _damage_enemy(e: Enemy, amount: float, knock := Vector2.ZERO) -> void:
 		return
 	audio.play("hit")
 	var boss := e.is_boss
+	# 地獄甲：被打後 1 秒內減傷（甲的顏色變亮表示變硬）
+	if e.hell and e.kind == "甲":
+		if e.armor_t > 0.0:
+			amount *= HELL_ARMOR_MULT
+		e.armor_t = HELL_ARMOR_TIME
 	var num := particles.add(str(int(round(amount))),
 			e.position + Vector2(randf_range(-8, 8), -e.radius - 6.0),
 			Vector2(randf_range(-20, 20), -70), 0.45, 33 if boss else 22, Color.WHITE)
@@ -1705,6 +1861,7 @@ func _kill_enemy(e: Enemy) -> void:
 	if e.is_boss:
 		key = e.label if e.label.begins_with("大") else "王"
 	kills_by_kind[key] = kills_by_kind.get(key, 0) + 1
+	_hell_death(e)
 	audio.play("explode" if e.is_boss else "kill")
 	var cell: Array = grid.get(_cell(e.position), [])
 	cell.erase(e)
@@ -2510,12 +2667,14 @@ func _update_smite(_delta: float) -> void:
 
 
 func _smite_all() -> void:
+	_smiting = true
 	audio.play("smite")
 	for e: Enemy in enemies.duplicate():
 		if e.is_boss:
 			_damage_enemy(e, _damage() * BOSS_LAND_MULT)
 		else:
 			_kill_enemy(e)
+	_smiting = false
 	for b in arrows:
 		b.node.queue_free()
 	arrows.clear()

@@ -780,10 +780,7 @@ func _process_difficulty() -> void:
 		_start_run()
 
 
-## 難度卡片：圖示字、名稱、說明（無盡另外寫最高紀錄）
-const DIFFICULTY_ICONS := ["易", "常", "難", "獄", "無"]
-
-
+## 難度卡片：大字直接寫難度名稱，下面是說明（無盡另外寫最高紀錄）
 func _show_difficulty() -> void:
 	var cards := []
 	for i in DIFFICULTIES.size():
@@ -791,7 +788,7 @@ func _show_difficulty() -> void:
 		var sub := ""
 		if d.get("endless", false) and Meta.endless_best > 0.0:
 			sub = "最高 " + _fmt_time(Meta.endless_best)
-		cards.append({"icon": DIFFICULTY_ICONS[i], "name": d.name, "sub": sub, "desc": d.desc})
+		cards.append({"icon": d.name, "name": "", "sub": sub, "desc": d.desc})
 	var who: String = "%s（%s）" % [CHARACTERS[character].glyph, CHARACTERS[character].name]
 	var hint := "點卡片選擇，再點一次開始" if is_touch else "A D / ←→ 選難度　Space / Enter 開始　Esc 返回"
 	level_cards.show_cards("選擇難度", cards, difficulty, hint, "角色：" + who, [], "返回")

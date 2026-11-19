@@ -93,6 +93,7 @@
 - `main.gd`：選角、一局的流程、生成、攻擊、金、HUD；最上面的常數就是平衡參數
 - `meta.gd`：局外成長（鑽、鑽石升級、存檔）
 - `meta_menu.gd`：鑽石升級畫面
+- `edge_pointer.gd`：畫面邊緣的方向提示（大三角形 + 粗體字，寶箱、王、愛心在畫面外時）
 - `heart.gd`：補血愛心（字型沒有 ♥，用小方塊畫）
 - `pause_menu.gd`：暫停畫面（音樂、音效音量、繼續）
 - `game_audio.gd`：音樂與音效（音效太密集會自動略過、靜音）；音量 bus 定義在 `default_bus_layout.tres`

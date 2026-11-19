@@ -160,8 +160,7 @@ const SMITE_RADIUS := 108.0         # 只用來畫中間那圈「罰」
 const COLOR_SMITE := Color(0.75, 0.9, 1.0)
 
 # 寶箱：每 30 秒在附近隨機出現，王死掉也會掉；打開後二選一強化「彈」或「刀」
-const POINTER_SIZE := 66              # 寶箱、王在畫面外時，邊緣提示字的大小
-const POINTER_MARGIN := 60.0          # 提示字離畫面邊緣多遠（字變大了，要往內縮才不會被切掉）
+const POINTER_MARGIN := 46.0          # 邊緣提示的三角形離畫面邊緣多遠（字在三角形往內一點）
 # ---------- 人＋砲 ----------
 const CANNON_INTERVAL := FIRE_INTERVAL * 4.0   # 射速是一般射擊的四分之一
 const CANNON_SPEED := 420.0
@@ -448,7 +447,7 @@ var next_boss_time := BOSS_INTERVAL
 var next_chest_time := CHEST_INTERVAL
 var next_heal_time := HEAL_INTERVAL
 var hearts: Array[HeartPickup] = []
-var heart_pointer: HeartPickup      # 最近的愛心在畫面外時，畫面邊緣的提示
+var heart_pointer: EdgePointer      # 最近的愛心在畫面外時，畫面邊緣的提示
 var final_phase := false           # 三分鐘後的決戰：還是會掉金，但不再出寶箱
 var final_bosses: Array[Enemy] = []
 var final_roster: Array[String] = []  # 決戰一開始有哪些王（照順序），血條用；死掉的從 final_bosses 拿掉
@@ -468,8 +467,8 @@ var arrows: Array[Bullet] = []      # 弓射出來的箭
 var effects: Array[Fx] = []
 var golds: Array[Glyph] = []
 var chests: Array[Chest] = []
-var chest_pointer: Glyph            # 寶箱在畫面外時，畫面邊緣的提示
-var boss_pointers: Array[Glyph] = []  # 王在畫面外時，畫面邊緣的提示（一隻王一個）
+var chest_pointer: EdgePointer      # 寶箱在畫面外時，畫面邊緣的提示
+var boss_pointers: Array[EdgePointer] = []  # 王在畫面外時，畫面邊緣的提示（一隻王一個）
 var player_bar: Node2D              # 主角頭上的血條
 var smite_ring: SmiteRing           # 滑鼠位置的天罰範圍圈
 var grid := {}  # Vector2i -> Array[Enemy]
@@ -542,19 +541,9 @@ func _ready() -> void:
 	smite_ring.visible = false
 	add_child(smite_ring)
 
-	chest_pointer = Glyph.new().setup("寶", POINTER_SIZE, COLOR_CHEST)
-	chest_pointer.modulate.a = 0.7
-	chest_pointer.z_index = 20
-	chest_pointer.visible = false
-	add_child(chest_pointer)
-
-	heart_pointer = HeartPickup.new()
-	heart_pointer.pulse = false
-	heart_pointer.scale = Vector2(0.7, 0.7)
-	heart_pointer.modulate.a = 0.7
-	heart_pointer.z_index = 20
-	heart_pointer.visible = false
-	add_child(heart_pointer)
+	chest_pointer = _make_pointer("寶", COLOR_CHEST)
+	heart_pointer = _make_pointer("", HeartPickup.COLOR)
+	heart_pointer.heart = true
 
 	_setup_input()
 	_build_hud()
@@ -2604,10 +2593,7 @@ func _update_hearts() -> void:
 		if d < best_d:
 			best_d = d
 			best = h
-	var edge := _edge_point(best.position) if best != null else Vector2.INF
-	heart_pointer.visible = edge != Vector2.INF
-	if heart_pointer.visible:
-		heart_pointer.position = edge
+	_place_pointer(heart_pointer, best.position if best != null else Vector2.INF)
 
 
 func _spawn_heart() -> void:
@@ -2747,13 +2733,7 @@ func _update_chest_pointer() -> void:
 		if d < best_d:
 			best_d = d
 			best = c
-	if best == null:
-		chest_pointer.visible = false
-		return
-	var edge := _edge_point(best.node.position, POINTER_MARGIN)
-	chest_pointer.visible = edge != Vector2.INF
-	if chest_pointer.visible:
-		chest_pointer.position = edge
+	_place_pointer(chest_pointer, best.node.position if best != null else Vector2.INF)
 
 
 ## 王在畫面外時，在畫面邊緣朝牠的方向顯示牠的字（每隻王一個）
@@ -2762,25 +2742,37 @@ func _update_boss_pointers() -> void:
 	for e in enemies:
 		if not e.is_boss:
 			continue
-		var edge := _edge_point(e.position, POINTER_MARGIN + 40.0)   # 「大鬼」這種兩個字比較寬
-		if edge == Vector2.INF:
+		if _edge_point(e.position, POINTER_MARGIN) == Vector2.INF:
 			continue
 		if used >= boss_pointers.size():
-			var g := Glyph.new().setup(e.label, POINTER_SIZE, e.base_color)
-			g.modulate.a = 0.8
-			g.z_index = 20
-			add_child(g)
-			boss_pointers.append(g)
+			boss_pointers.append(_make_pointer("", Color.WHITE))
 		var ptr := boss_pointers[used]
-		if ptr.text != e.label:
-			ptr.set_text(e.label)
+		ptr.text = e.label
 		ptr.color = e.base_color
-		ptr.position = edge
-		ptr.visible = true
-		ptr.queue_redraw()
+		_place_pointer(ptr, e.position)
 		used += 1
 	for i in range(used, boss_pointers.size()):
 		boss_pointers[i].visible = false
+
+
+func _make_pointer(text: String, color: Color) -> EdgePointer:
+	var p := EdgePointer.new()
+	p.text = text
+	p.color = color
+	p.z_index = 20
+	p.visible = false
+	add_child(p)
+	return p
+
+
+## 目標在畫面外時：三角形貼著畫面邊緣、指向目標；目標在畫面內（或 INF）就藏起來
+func _place_pointer(p: EdgePointer, target: Vector2) -> void:
+	var edge := Vector2.INF if target == Vector2.INF else _edge_point(target, POINTER_MARGIN)
+	p.visible = edge != Vector2.INF
+	if p.visible:
+		p.position = edge
+		p.dir = target - player.position
+		p.queue_redraw()
 
 
 ## target 在畫面外的話，回傳主角往 target 方向碰到畫面邊緣（往內縮一點）的位置；在畫面內回傳 INF

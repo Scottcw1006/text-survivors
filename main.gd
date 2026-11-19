@@ -707,6 +707,9 @@ func _setup_input() -> void:
 		var click := InputEventMouseButton.new()
 		click.button_index = MOUSE_BUTTON_LEFT
 		InputMap.action_add_event("smite", click)
+		var key := InputEventKey.new()
+		key.physical_keycode = KEY_QUOTELEFT   # ` 鍵（Esc 下面、1 左邊）也能放天罰
+		InputMap.action_add_event("smite", key)
 
 
 # ---------- 選角 ----------
@@ -921,7 +924,7 @@ const TUTORIAL_TIPS_TOUCH := [
 const TUTORIAL_TIPS := [
 	{"name": "移動", "key": "WASD / ↑↓←→", "desc": "攻擊全自動，\n只要專心走位、\n撿「金」升級"},
 	{"name": "技能", "key": "Shift", "desc": "人衝刺、刀跳躍，\n都會無敵。\n存兩次，5 秒回一次"},
-	{"name": "天罰", "key": "滑鼠左鍵", "desc": "一局只能用一次，\n清空全地圖的小兵"},
+	{"name": "天罰", "key": "滑鼠左鍵 / `", "desc": "一局只能用一次，\n清空全地圖的小兵"},
 	{"name": "選卡片", "key": "A D / ←→", "desc": "升級、開寶箱時\n左右選，\n按 Space / Enter 確定"},
 ]
 
@@ -3133,7 +3136,7 @@ func _build_hud() -> void:
 	root.add_child(hud_key_skill)
 	hud_key_smite = Label.new()
 	hud_key_smite.add_theme_font_size_override("font_size", 22)
-	hud_key_smite.text = "滑鼠左鍵"
+	hud_key_smite.text = "滑鼠左鍵 / `"
 	hud_key_smite.position = Vector2(24, 112)
 	root.add_child(hud_key_smite)
 

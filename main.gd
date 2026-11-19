@@ -279,7 +279,7 @@ const POWER_INFO := {
 # 升級：吃「金」累積經驗，升級時三選一
 const XP_FIRST_LEVEL := 6           # 升到 2 級要幾個金
 const XP_STEP := 4                  # 之後每級多要幾個
-const UPGRADE_MAX_LEVEL := 7          # 一般升級（力、疾…）每種最多幾級
+const UPGRADE_MAX_LEVEL := 10         # 一般升級（力、疾…）每種最多幾級
 const UPGRADE_MAX_LEVEL_HELL := 10    # 地獄難度的上限
 ## who：all = 兩個角色都有，否則只給那個角色
 const UPGRADES := [

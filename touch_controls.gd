@@ -110,15 +110,11 @@ func _menu_tap(finger: int, pos: Vector2) -> void:
 	if cards.cursor >= 0 and cards.button_rect.has_point(pos):
 		if main.state == main.State.SELECT:
 			main.open_meta()
+		elif main.state == main.State.DIFFICULTY:
+			main.close_difficulty()
 		elif main.state == main.State.LEVEL_UP:
 			main.reroll_upgrades()
 		return
-	# 選角畫面：點難度
-	if main.state == main.State.SELECT:
-		var d := cards.option_at(pos)
-		if d >= 0:
-			main.set_difficulty(d)
-			return
 	if cards.cursor < 0:
 		# 結算畫面：要點到「再來一局」按鈕才會重開
 		if cards.button_rect.has_point(pos):

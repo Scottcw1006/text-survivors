@@ -300,7 +300,7 @@ const CHARACTERS := [
 	{"glyph": "刀", "name": "近戰型", "desc": "武器：刀法、\n斬擊波、影分身\nShift：跳五格\n落地震殺周圍敵人"},
 ]
 
-enum State { SELECT, PLAYING, LEVEL_UP, DEAD, WON, POWER_UP, PAUSED, META }
+enum State { SELECT, PLAYING, LEVEL_UP, DEAD, WON, POWER_UP, PAUSED, META, DIFFICULTY }
 
 
 class Bullet:
@@ -600,6 +600,9 @@ func _process(delta: float) -> void:
 		State.META:
 			_process_meta()
 			return
+		State.DIFFICULTY:
+			_process_difficulty()
+			return
 
 	if Input.is_action_just_pressed("pause"):
 		_set_paused(true)
@@ -734,10 +737,6 @@ func _process_select() -> void:
 		return
 	if Input.is_action_just_pressed("toggle_mode"):
 		toggle_touch_mode()
-	if Input.is_action_just_pressed("move_up"):
-		set_difficulty(difficulty - 1)
-	elif Input.is_action_just_pressed("move_down"):
-		set_difficulty(difficulty + 1)
 	var step := 0
 	if Input.is_action_just_pressed("move_left"):
 		step = -1
@@ -751,14 +750,63 @@ func _process_select() -> void:
 	if Input.is_action_just_pressed("confirm"):
 		audio.play("ui_ok")
 		last_character = character
-		# 一開始沒有任何武器，進遊戲先選一個
-		bullet_lv = 0
-		blade_lv = 0
-		level_cards.visible = false
-		hud_version.visible = false
-		state = State.PLAYING
-		_apply_meta_start()
-		_open_start_weapon()
+		open_difficulty()
+
+
+# ---------- 選難度（第二頁） ----------
+
+func open_difficulty() -> void:
+	state = State.DIFFICULTY
+	_show_difficulty()
+
+
+## 回到選角那一頁
+func close_difficulty() -> void:
+	audio.play("ui_move")
+	state = State.SELECT
+	_show_select()
+
+
+func _process_difficulty() -> void:
+	if Input.is_action_just_pressed("pause") or Input.is_action_just_pressed("meta_reset"):
+		close_difficulty()
+		return
+	if Input.is_action_just_pressed("move_left"):
+		set_difficulty(difficulty - 1)
+	elif Input.is_action_just_pressed("move_right"):
+		set_difficulty(difficulty + 1)
+	if Input.is_action_just_pressed("confirm"):
+		audio.play("ui_ok")
+		_start_run()
+
+
+## 難度卡片：圖示字、名稱、說明（無盡另外寫最高紀錄）
+const DIFFICULTY_ICONS := ["易", "常", "難", "獄", "無"]
+
+
+func _show_difficulty() -> void:
+	var cards := []
+	for i in DIFFICULTIES.size():
+		var d: Dictionary = DIFFICULTIES[i]
+		var sub := ""
+		if d.get("endless", false) and Meta.endless_best > 0.0:
+			sub = "最高 " + _fmt_time(Meta.endless_best)
+		cards.append({"icon": DIFFICULTY_ICONS[i], "name": d.name, "sub": sub, "desc": d.desc})
+	var who: String = "%s（%s）" % [CHARACTERS[character].glyph, CHARACTERS[character].name]
+	var hint := "點卡片選擇，再點一次開始" if is_touch else "A D / ←→ 選難度　Space / Enter 開始　Esc 返回"
+	level_cards.show_cards("選擇難度", cards, difficulty, hint, "角色：" + who, [], "返回")
+
+
+## 開始這一局
+func _start_run() -> void:
+	# 一開始沒有任何武器，進遊戲先選一個
+	bullet_lv = 0
+	blade_lv = 0
+	level_cards.visible = false
+	hud_version.visible = false
+	state = State.PLAYING
+	_apply_meta_start()
+	_open_start_weapon()
 
 
 ## 開局選武器：這個角色的每一條武器線（都從 Lv0 → Lv1）選一個
@@ -885,16 +933,12 @@ func _show_select() -> void:
 	for c: Dictionary in CHARACTERS:
 		var desc: String = c.desc.replace("Shift", "技") if is_touch else c.desc
 		cards.append({"icon": c.glyph, "name": c.name, "sub": "", "desc": desc})
-	var names := DIFFICULTIES.map(func(d: Dictionary) -> String: return d.name)
-	var descs := DIFFICULTIES.map(func(d: Dictionary) -> String: return d.desc)
 	if is_touch:
-		level_cards.show_cards("選擇角色", cards, character, "點卡片選擇，再點一次開始",
+		level_cards.show_cards("選擇角色", cards, character, "點卡片選擇，再點一次下一步",
 				"操作模式：手機　（點這裡切換成電腦）", TUTORIAL_TIPS_TOUCH, "鑽石升級　鑽 %d" % Meta.tokens)
-		level_cards.set_options("難度", names, difficulty, "點選", descs)
 	else:
-		level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選角色　W S / ↑↓ 選難度　Space / Enter 開始　U 鑽石升級",
+		level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選角色　Space / Enter 下一步　U 鑽石升級",
 				"操作模式：電腦　（按 Tab 或點這裡切換成手機）", TUTORIAL_TIPS, "鑽石升級　鑽 %d" % Meta.tokens)
-		level_cards.set_options("難度", names, difficulty, "W S / ↑↓", descs)
 
 
 ## 難度：hp = 怪物血量倍率、count = 怪物數量倍率、speed = 移動速度倍率、banned = 不會出現的怪
@@ -971,7 +1015,10 @@ func set_difficulty(i: int) -> void:
 		audio.play("ui_move")
 	difficulty = d
 	_apply_wall_style()
-	_show_select()
+	if state == State.DIFFICULTY:
+		_show_difficulty()
+	else:
+		_show_select()
 
 
 ## 地獄難度：牆變成紅色的「焰」
@@ -1130,6 +1177,8 @@ func touch_select(i: int) -> void:
 			character = i
 			player.set_text(CHARACTERS[character].glyph)
 			_show_select()
+		State.DIFFICULTY:
+			set_difficulty(i)
 		State.LEVEL_UP:
 			upgrade_cursor = i
 			_show_level_up()

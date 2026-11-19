@@ -532,6 +532,7 @@ func _ready() -> void:
 	add_child(audio)
 	audio.play_music("main")
 	audio._stream("res://audio/music_final.wav")   # 先載入決戰音樂，三分鐘時才不會卡
+	audio._stream("res://audio/music_hell.wav")
 
 	terrain = Terrain.new()
 	terrain.font = font
@@ -778,6 +779,7 @@ func _apply_meta_start() -> void:
 		for i in Meta.level(key):
 			_apply_upgrade(u.id)
 	rerolls_left = Meta.rerolls()
+	audio.play_music(_base_music())
 	if _endless():
 		next_chest_time = ENDLESS_CHEST_INTERVAL
 	pending_power += Meta.level("chest")
@@ -908,10 +910,16 @@ const DIFFICULTIES := [
 		"desc": "玩到死為止\n越來越難\n挑戰最高紀錄"},
 ]
 # ---------- 無盡模式 ----------
-const ENDLESS_HP_GROWTH := 0.15       # 怪物血量每分鐘 +15%（不會停）
+const ENDLESS_HP_GROWTH := 0.15       # 怪物血量每一階 +15%（不會停）
 const ENDLESS_SPAWN_RAMP := 600.0     # 出怪速度到第 10 分鐘封頂
 const ENDLESS_CHEST_INTERVAL := 45.0  # 自動寶箱每 45 秒一個
 const ENDLESS_WAVE_EVERY := 120.0     # 每 2 分鐘一波大王，第 N 波 N 隻，只有第一隻掉寶箱
+const ENDLESS_WAVE_NO_CHEST := 480.0  # 8 分鐘（含）以後的大王不掉寶箱
+const ENDLESS_WAVE_MID_TIME := 540.0  # 9 分鐘起每 1 分鐘一波
+const ENDLESS_WAVE_MID := 60.0
+const ENDLESS_WAVE_FAST_TIME := 720.0 # 12 分鐘起每 30 秒一波
+const ENDLESS_WAVE_FAST := 30.0
+const ENDLESS_HP_STEP := 50.0         # 怪物血量每 50 秒提升一次
 const ENDLESS_FIRE_TIME := 360.0      # 6 分鐘後牆變成焰
 const ENDLESS_HELL_START := 60.0      # 1 分鐘開始，每 36 秒有一種小兵變成地獄版，7 分鐘全部到齊
 const ENDLESS_HELL_GAP := 36.0
@@ -1413,18 +1421,35 @@ func _update_endless(delta: float) -> void:
 	if not endless_fire and elapsed >= ENDLESS_FIRE_TIME:
 		endless_fire = true
 		_apply_wall_style()
+		if not wave_active:
+			audio.play_music("hell")
 		_notice("牆全部變成了 [color=#%s]焰[/color]！碰到會受傷" % COLOR_FIRE.to_html(false))
 		_shake(10.0)
 	# 每 2 分鐘一波大王
 	if elapsed >= next_wave_time:
-		next_wave_time += ENDLESS_WAVE_EVERY
-		_start_wave()
+		var w := next_wave_time
+		next_wave_time = _next_wave_after(w)
+		_start_wave(w < ENDLESS_WAVE_NO_CHEST)
 	if wave_active and final_bosses.is_empty():
 		wave_active = false
-		audio.play_music("main")
+		audio.play_music(_base_music())
 		audio.play("level")
 		_show_big_banner("擊退！", Color(1.0, 0.85, 0.4))
 		celebrate_banner = 1.2
+
+
+## 平常的背景音樂：地獄難度、無盡變成焰牆之後用地獄音樂
+func _base_music() -> String:
+	return "hell" if DIFFICULTIES[difficulty].get("hell", false) or endless_fire else "main"
+
+
+## 無盡：這一波大王之後，下一波什麼時候出（2 分鐘一波 → 9 分鐘起每 1 分鐘 → 12 分鐘起每 30 秒）
+func _next_wave_after(w: float) -> float:
+	if w >= ENDLESS_WAVE_FAST_TIME:
+		return w + ENDLESS_WAVE_FAST
+	if w >= ENDLESS_WAVE_MID_TIME:
+		return w + ENDLESS_WAVE_MID
+	return minf(w + ENDLESS_WAVE_EVERY, ENDLESS_WAVE_MID_TIME)
 
 
 func _notice(bbcode: String) -> void:
@@ -1434,7 +1459,7 @@ func _notice(bbcode: String) -> void:
 
 
 ## 一波大王：第 N 波 N 隻，只有第一隻掉寶箱
-func _start_wave() -> void:
+func _start_wave(chest := true) -> void:
 	wave_num += 1
 	wave_active = true
 	# 上一波還沒打完的大王留著，跟這一波疊在一起（血條一起顯示，全部打完才算擊退）
@@ -1450,7 +1475,7 @@ func _start_wave() -> void:
 			pos = player.position + Vector2.from_angle(TAU * i / wave_num) * get_viewport_rect().size.x * 0.55
 		var boss := _spawn_boss(bigs.pick_random(), pos, true)
 		_buff_final(boss)
-		boss.drop_chest = i == 0
+		boss.drop_chest = chest and i == 0   # 8 分鐘以後的大王不掉寶箱
 		final_bosses.append(boss)
 		final_roster.append(boss.label)
 	intro_text = "大王來襲"
@@ -1609,8 +1634,9 @@ func _pick_enemy_type() -> String:
 
 ## 怪物血量倍率：隨時間成長 × 難度
 func _hp_mult() -> float:
-	var growth := ENDLESS_HP_GROWTH if _endless() else HP_GROWTH_PER_MINUTE
-	return (1.0 + growth * floorf(elapsed / 60.0)) * DIFFICULTIES[difficulty].hp
+	if _endless():
+		return (1.0 + ENDLESS_HP_GROWTH * floorf(elapsed / ENDLESS_HP_STEP)) * DIFFICULTIES[difficulty].hp
+	return (1.0 + HP_GROWTH_PER_MINUTE * floorf(elapsed / 60.0)) * DIFFICULTIES[difficulty].hp
 
 
 func _spawn_enemy(kind: String, pos: Vector2) -> void:

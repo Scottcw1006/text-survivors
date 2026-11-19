@@ -403,3 +403,6 @@ if __name__ == "__main__":
         save("sfx_" + name, fn())
     save("music_main", make_main(), 0.8, rms=0.12)
     save("music_final", make_final(), 0.8, rms=0.13)   # 決戰稍微大聲一點點
+    # 地獄（地獄難度、無盡 6 分鐘後）：hell_options.py 的「地獄低吟 V3 撥弦」
+    import hell_options
+    save("music_hell", hell_options.v3(), 0.8, rms=0.12)

@@ -2901,7 +2901,8 @@ func _update_feedback(delta: float) -> void:
 # ---------- 寶箱 ----------
 
 func _update_chests() -> void:
-	if not final_phase and elapsed >= next_chest_time:
+	# 無盡 8 分鐘以後：自動寶箱也不再出現
+	if not final_phase and elapsed >= next_chest_time and not (_endless() and elapsed >= ENDLESS_WAVE_NO_CHEST):
 		next_chest_time += ENDLESS_CHEST_INTERVAL if _endless() else CHEST_INTERVAL
 		_spawn_chest()
 

@@ -1121,7 +1121,7 @@ func _check_player_hit(delta: float) -> void:
 		return
 	# 地獄：碰到「焰」牆就受傷
 	if DIFFICULTIES[difficulty].get("fire_walls", false) and terrain.overlaps_wall(player.position, PLAYER_RADIUS + 3.0):
-		_hurt_player(FIRE_WALL_DAMAGE, [["被", null], ["焰", COLOR_FIRE], ["燒倒了", null]])
+		_hurt_player(FIRE_WALL_DAMAGE, [["一不小心貼到", null], ["焰", COLOR_FIRE], ["，被燒成灰", null]])
 		return
 	for e: Enemy in _nearby(player.position):
 		if e.position.distance_to(player.position) < PLAYER_RADIUS + e.radius:
@@ -1131,9 +1131,19 @@ func _check_player_hit(delta: float) -> void:
 
 
 ## 被敵人撞到的死因：「被[牛]撞飛了」，敵人的字用牠的顏色
-const CONTACT_VERBS := {
-	"敵": "打倒了", "鼠": "咬倒了", "甲": "撞倒了", "弓": "打倒了", "鳥": "啄倒了", "弩": "打倒了",
-	"冑": "壓倒了", "魂": "纏住了", "鬼": "帶走了", "牛": "撞飛了", "犇": "撞飛了",
+## 每種敵人撞死你的句子：[前面, 後面]，中間是上色的敵人名字
+const CONTACT_LINES := {
+	"敵": ["被", "一拳打趴在地上"],
+	"鼠": ["被一群", "圍上來啃光光"],
+	"甲": ["被", "硬生生撞倒了"],
+	"弓": ["被", "近身偷了一記"],
+	"鳥": ["被", "從天上俯衝啄倒了"],
+	"弩": ["被", "貼臉打倒了"],
+	"冑": ["被", "整個壓在底下"],
+	"魂": ["被", "纏上，再也動不了"],
+	"鬼": ["被", "悄悄帶走了"],
+	"牛": ["被", "一頭撞飛到天邊"],
+	"犇": ["被", "撞得粉身碎骨"],
 }
 
 
@@ -1144,7 +1154,8 @@ func _who(e: Enemy) -> String:
 
 
 func _contact_cause(e: Enemy) -> Array:
-	return [["被", null], [_who(e), e.base_color], [CONTACT_VERBS.get(e.kind, "打倒了"), null]]
+	var line: Array = CONTACT_LINES.get(e.kind, ["被", "打倒了"])
+	return [[line[0], null], [_who(e), e.base_color], [line[1], null]]
 
 
 ## 技能中、落地後、剛被打過都不會受傷
@@ -1690,7 +1701,7 @@ func _enemy_blast(e: Enemy) -> void:
 	_add_fx(fx, 0.3)
 	_shake(4.0)
 	if player.position.distance_to(e.position) < BLAST_RADIUS + PLAYER_RADIUS:
-		_hurt_player(BLAST_DAMAGE, [["被", null], [_who(e), e.base_color], ["的爆炸炸飛了", null]])
+		_hurt_player(BLAST_DAMAGE, [["站太近，被", null], [_who(e), e.base_color], ["的爆炸轟上天", null]])
 
 
 ## 大魂：放出一圈半徑 3 格的無敵領域，裡面的敵人 1 秒內完全不受傷
@@ -1784,7 +1795,7 @@ func _update_hazards(delta: float) -> void:
 			hazards.remove_at(i)
 			continue
 		if _player_vulnerable() and g.position.distance_to(player.position) < PLAYER_RADIUS + 14.0:
-			_hurt_player(HELL_TRAIL_DAMAGE, [["被", null], ["犇", ENEMY_TYPES["犇"]["color"]], ["留下的", null], ["焰", COLOR_FIRE], ["燒倒了", null]])
+			_hurt_player(HELL_TRAIL_DAMAGE, [["踩到", null], ["犇", ENEMY_TYPES["犇"]["color"]], ["留下的", null], ["焰", COLOR_FIRE], ["，被燒成灰", null]])
 
 
 ## 放箭；volley > 1 時一次放一排扇形的箭（大弓）
@@ -1819,7 +1830,7 @@ func _move_arrows(delta: float) -> void:
 		b.life -= delta
 		var done := b.life <= 0.0 or terrain.is_wall(terrain.cell_of(b.node.position))
 		if not done and _player_vulnerable() and b.node.position.distance_to(player.position) < PLAYER_RADIUS + 6.0:
-			_hurt_player(int(b.damage), [["被", null], [b.src, b.src_color], ["的", null], ["矢", COLOR_ARROW], ["射倒了", null]])
+			_hurt_player(int(b.damage), [["一支", null], ["矢", COLOR_ARROW], ["從", null], [b.src, b.src_color], ["那邊飛來，正中要害", null]])
 			done = true
 		if done:
 			b.node.queue_free()

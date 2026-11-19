@@ -656,6 +656,7 @@ func _process(delta: float) -> void:
 	if not _update_skill(delta):
 		_move_player(delta)
 	if terrain.cell_of(player.position) != old_cell:
+		_set_flow_radius()
 		terrain.update_flow(player.position)
 	_spawn_enemies(delta)
 	_build_grid()
@@ -1033,7 +1034,7 @@ func _apply_wall_style() -> void:
 	var fire := _fire_walls()
 	terrain.wall_char = "焰" if fire else Terrain.WALL_CHAR
 	terrain.wall_color = Color(1.0, 0.35, 0.2) if fire else Terrain.WALL_COLOR
-	terrain.queue_redraw()
+	terrain.refresh()
 
 
 ## 選角畫面下面的操作教學（手機版）
@@ -1137,6 +1138,16 @@ func _pick_hint() -> String:
 	return "點卡片選擇，再點一次確定" if is_touch else "A D / ←→ 選擇　Space / Enter 確定"
 
 
+## 尋路範圍：電腦固定 40 格；手機畫面小，只要涵蓋畫面外的生成位置（王的生成圈是畫面寬 0.55 倍）
+func _set_flow_radius() -> void:
+	if not is_touch:
+		terrain.flow_radius = Terrain.FLOW_RADIUS
+		return
+	var view := get_viewport_rect().size
+	var m := maxf(view.x, view.y)
+	terrain.flow_radius = mini(Terrain.FLOW_RADIUS, ceili(maxf(m * 0.5 + SPAWN_MARGIN, m * 0.55) / Terrain.CELL) + 3)
+
+
 ## 手機模式：畫面基準解析度減半，所有東西（字、卡片、地圖）看起來放大一倍
 ## （看得到的範圍也跟著變小一半）
 func _apply_screen_scale() -> void:
@@ -1163,7 +1174,7 @@ func _apply_screen_scale() -> void:
 		hud_final_hint.offset_bottom = 0
 		hud_final_hint.add_theme_font_size_override("font_size", 44 if is_touch else 66)
 	if terrain != null:
-		terrain.queue_redraw()
+		terrain.refresh()
 
 
 ## 選角畫面切換手機／電腦操作，重開後也會記得

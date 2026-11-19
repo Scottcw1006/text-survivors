@@ -15,18 +15,28 @@ const GROUND_CHARS := ["草", "艸", "石", "．"]
 const GROUND_DENSITY := 8         # 百分之幾的空地有草
 const GROUND_COLOR := Color(1, 1, 1, 0.12)
 
-const FLOW_RADIUS := 40           # 尋路範圍（格），要涵蓋畫面外的生成位置（畫面 2560×1440）
-const FLOW_SIZE := FLOW_RADIUS * 2 + 1
+const FLOW_RADIUS := 40           # 尋路範圍（格），要涵蓋畫面外的生成位置（電腦畫面 2560×1440）
 
 var font: Font
+var flow_radius := FLOW_RADIUS     # 手機模式畫面比較小，main 會依畫面大小調小（省時間）
+var flow_size := FLOW_RADIUS * 2 + 1
 var wall_char := WALL_CHAR       # 地獄難度改成「焰」
 var wall_color := WALL_COLOR
 var font_size := 33
 var noise := FastNoiseLite.new()
 
 var _center_cell := Vector2i(999999, 999999)
+var _chunks := {}                 # 塊座標 -> Chunk（已經畫好的地形塊）
 var _flow_origin := Vector2i.ZERO
 var _flow := PackedInt32Array()   # 每格到玩家的步數，-1 = 到不了
+var _flow_walls := PackedByteArray()   # 尋路範圍裡哪些格子是牆（1 = 牆）
+var _flow_queue := PackedInt32Array()
+var _wall_cache := {}             # 格子 -> 是不是牆（noise 算一次就記住，手機上省很多時間）
+var _char_w := {}                 # 地形字的寬度（只有幾個字，量一次就好）
+
+const WALL_CACHE_MAX := 300000    # 走太遠記太多格就清掉重記
+const CHUNK := 8                  # 地形一塊幾格寬
+const CHUNKS_PER_FRAME := 3       # 畫面外預先畫的塊，每一幀最多畫幾塊
 
 
 func _init() -> void:
@@ -46,9 +56,14 @@ func cell_center(c: Vector2i) -> Vector2:
 
 
 func is_wall(c: Vector2i) -> bool:
-	if c.x * c.x + c.y * c.y <= SAFE_RADIUS * SAFE_RADIUS:
-		return false
-	return noise.get_noise_2d(c.x, c.y) > WALL_THRESHOLD
+	var v = _wall_cache.get(c)
+	if v != null:
+		return v
+	var w := c.x * c.x + c.y * c.y > SAFE_RADIUS * SAFE_RADIUS and noise.get_noise_2d(c.x, c.y) > WALL_THRESHOLD
+	if _wall_cache.size() >= WALL_CACHE_MAX:
+		_wall_cache.clear()
+	_wall_cache[c] = w
+	return w
 
 
 ## 半徑 r 的圓放在 p 會不會卡進牆
@@ -85,24 +100,53 @@ func slide(pos: Vector2, motion: Vector2, r: float) -> Vector2:
 # ---------- 尋路（flow field）----------
 
 func update_flow(target: Vector2) -> void:
+	# 用一維陣列做 BFS（不建 Vector2i、不呼叫函式），手機網頁上才不會每走一格就卡一下
 	_flow_origin = cell_of(target)
-	_flow.resize(FLOW_SIZE * FLOW_SIZE)
+	flow_size = flow_radius * 2 + 1
+	var size := flow_size
+	var total := size * size
+	_flow.resize(total)
 	_flow.fill(-1)
-	var queue: Array[Vector2i] = [_flow_origin]
-	_flow[_flow_index(_flow_origin)] = 0
+	_flow_walls.resize(total)
+	_flow_queue.resize(total)
+	var ox := _flow_origin.x - flow_radius
+	var oy := _flow_origin.y - flow_radius
+	var i := 0
+	for y in size:
+		for x in size:
+			_flow_walls[i] = 1 if is_wall(Vector2i(ox + x, oy + y)) else 0
+			i += 1
+	var start := flow_radius * size + flow_radius
+	_flow[start] = 0
+	_flow_queue[0] = start
 	var head := 0
-	var dirs: Array[Vector2i] = [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
-	while head < queue.size():
-		var c := queue[head]
+	var tail := 1
+	var last_row := total - size
+	while head < tail:
+		var c := _flow_queue[head]
 		head += 1
-		var d := _flow[_flow_index(c)]
-		for dir in dirs:
-			var n := c + dir
-			var i := _flow_index(n)
-			if i < 0 or _flow[i] != -1 or is_wall(n):
-				continue
-			_flow[i] = d + 1
-			queue.append(n)
+		var d := _flow[c] + 1
+		var x := c % size
+		var n := c - 1
+		if x > 0 and _flow[n] == -1 and _flow_walls[n] == 0:
+			_flow[n] = d
+			_flow_queue[tail] = n
+			tail += 1
+		n = c + 1
+		if x < size - 1 and _flow[n] == -1 and _flow_walls[n] == 0:
+			_flow[n] = d
+			_flow_queue[tail] = n
+			tail += 1
+		n = c - size
+		if c >= size and _flow[n] == -1 and _flow_walls[n] == 0:
+			_flow[n] = d
+			_flow_queue[tail] = n
+			tail += 1
+		n = c + size
+		if c < last_row and _flow[n] == -1 and _flow_walls[n] == 0:
+			_flow[n] = d
+			_flow_queue[tail] = n
+			tail += 1
 
 
 ## 從格子 c 走到玩家要幾步，-1 = 到不了或超出尋路範圍
@@ -137,34 +181,74 @@ func flow_direction(p: Vector2, target: Vector2) -> Vector2:
 
 
 func _flow_index(c: Vector2i) -> int:
-	var x := c.x - _flow_origin.x + FLOW_RADIUS
-	var y := c.y - _flow_origin.y + FLOW_RADIUS
-	if x < 0 or y < 0 or x >= FLOW_SIZE or y >= FLOW_SIZE:
+	var x := c.x - _flow_origin.x + flow_radius
+	var y := c.y - _flow_origin.y + flow_radius
+	if x < 0 or y < 0 or x >= flow_size or y >= flow_size:
 		return -1
-	return y * FLOW_SIZE + x
+	return y * flow_size + x
 
 
 # ---------- 繪製 ----------
 
+## 地形分成一塊一塊（CHUNK × CHUNK 格）畫，每塊是一個子節點：
+## 畫過的塊不會再畫，走動時只畫邊緣新出現的塊，手機上才不會每走幾格就卡一下。
+class Chunk:
+	extends Node2D
+	var terrain: Terrain
+	var coord := Vector2i.ZERO
+
+	func _draw() -> void:
+		terrain._draw_chunk(self, coord)
+
+
 func follow(pos: Vector2) -> void:
-	var c := cell_of(pos)
-	if c != _center_cell:
-		_center_cell = c
-		queue_redraw()
-
-
-func _draw() -> void:
+	_center_cell = cell_of(pos)
 	var view := get_viewport_rect().size
-	var cols := int(view.x / CELL) / 2 + 2
-	var rows := int(view.y / CELL) / 2 + 2
+	# 畫面看得到的塊一定要有；外面再多一圈，每一幀最多先畫幾塊（分散開來）
+	var half := Vector2i(int(view.x / CELL) / 2 + 2, int(view.y / CELL) / 2 + 2)
+	var lo := _chunk_of(_center_cell - half)
+	var hi := _chunk_of(_center_cell + half)
+	var budget := CHUNKS_PER_FRAME
+	for cy in range(lo.y - 1, hi.y + 2):
+		for cx in range(lo.x - 1, hi.x + 2):
+			var k := Vector2i(cx, cy)
+			if _chunks.has(k):
+				continue
+			var visible_now := cx >= lo.x and cx <= hi.x and cy >= lo.y and cy <= hi.y
+			if not visible_now:
+				if budget <= 0:
+					continue
+				budget -= 1
+			var ch := Chunk.new()
+			ch.terrain = self
+			ch.coord = k
+			add_child(ch)
+			_chunks[k] = ch
+	# 離太遠的塊丟掉
+	for k: Vector2i in _chunks.keys():
+		if k.x < lo.x - 2 or k.x > hi.x + 2 or k.y < lo.y - 2 or k.y > hi.y + 2:
+			_chunks[k].queue_free()
+			_chunks.erase(k)
+
+
+## 牆的字、顏色或畫面大小改了：全部重畫
+func refresh() -> void:
+	for k: Vector2i in _chunks:
+		_chunks[k].queue_redraw()
+
+
+func _chunk_of(c: Vector2i) -> Vector2i:
+	return Vector2i(floori(float(c.x) / CHUNK), floori(float(c.y) / CHUNK))
+
+
+func _draw_chunk(ci: CanvasItem, k: Vector2i) -> void:
 	var ascent := font.get_ascent(font_size)
 	var height := font.get_height(font_size)
-	for dx in range(-cols, cols + 1):
-		for dy in range(-rows, rows + 1):
-			var c := _center_cell + Vector2i(dx, dy)
+	for dy in CHUNK:
+		for dx in CHUNK:
+			var c := Vector2i(k.x * CHUNK + dx, k.y * CHUNK + dy)
 			var text := ""
 			var color := wall_color
-			var size := font_size
 			if is_wall(c):
 				text = wall_char
 			else:
@@ -173,7 +257,10 @@ func _draw() -> void:
 					continue
 				text = GROUND_CHARS[(h / 100) % GROUND_CHARS.size()]
 				color = GROUND_COLOR
-			var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+			var w: float = _char_w.get(text, -1.0)
+			if w < 0.0:
+				w = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+				_char_w[text] = w
 			var center := cell_center(c)
-			draw_string(font, Vector2(center.x - w / 2.0, center.y + ascent - height / 2.0),
-					text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, color)
+			ci.draw_string(font, Vector2(center.x - w / 2.0, center.y + ascent - height / 2.0),
+					text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)

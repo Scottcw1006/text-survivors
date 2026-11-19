@@ -922,6 +922,13 @@ func meta_tap(pos: Vector2) -> void:
 		meta_menu.queue_redraw()
 
 
+## 網頁版、iPhone、而且不是從主畫面打開（Safari 不能全螢幕，要提示加入主畫面）
+func _ios_browser() -> bool:
+	if not OS.has_feature("web"):
+		return false
+	return bool(JavaScriptBridge.eval("/iPhone|iPod/.test(navigator.userAgent) && !navigator.standalone", true))
+
+
 func _show_select() -> void:
 	if hud_version != null:
 		var ver: String = preload("res://version.gd").TEXT
@@ -931,7 +938,10 @@ func _show_select() -> void:
 		var desc: String = c.desc.replace("Shift", "技") if is_touch else c.desc
 		cards.append({"icon": c.glyph, "name": c.name, "sub": "", "desc": desc})
 	if is_touch:
-		level_cards.show_cards("選擇角色", cards, character, "點卡片選擇，再點一次下一步",
+		var hint := "點卡片選擇，再點一次下一步"
+		if _ios_browser():
+			hint += "　｜　iPhone 全螢幕：Safari「分享 → 加入主畫面」再從主畫面打開"
+		level_cards.show_cards("選擇角色", cards, character, hint,
 				"操作模式：手機　（點這裡切換成電腦）", TUTORIAL_TIPS_TOUCH, "鑽石升級　鑽 %d" % Meta.tokens)
 	else:
 		level_cards.show_cards("選擇角色", cards, character, "A D / ←→ 選角色　Space / Enter 下一步　U 鑽石升級",
@@ -1135,6 +1145,9 @@ func _apply_screen_scale() -> void:
 	# 手機：畫面填滿整個螢幕（比 16:9 寬的手機左右看得多一點），不留黑邊，
 	# 搖桿和按鍵才會貼著真正的螢幕邊緣；電腦維持 16:9 加黑邊
 	get_window().content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND if is_touch else Window.CONTENT_SCALE_ASPECT_KEEP
+	# 網頁版手機模式：點一下畫面就進入全螢幕（網頁那邊的程式在 export_presets.cfg 的 head_include）
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("window.tsWantFullscreen = %s;" % ("true" if is_touch else "false"))
 	# 手機畫面比較窄，時間／決戰那行放到第二排，才不會跟左邊的血條疊在一起
 	if hud_time != null:
 		hud_time.position.y = 70 if is_touch else 16

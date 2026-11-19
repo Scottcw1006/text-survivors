@@ -90,9 +90,37 @@ body {
 	z-index: 1;
 }
 		</style>
-		<link id="-gd-engine-icon" rel="icon" type="image/png" href="game_20261119-225903.icon.png" />
-<link rel="apple-touch-icon" href="game_20261119-225903.apple-touch-icon.png"/>
-
+		<link id="-gd-engine-icon" rel="icon" type="image/png" href="game_20261119-230626.icon.png" />
+<link rel="apple-touch-icon" href="game_20261119-230626.apple-touch-icon.png"/>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="文字倖存者">
+<link rel="manifest" href="manifest.webmanifest">
+<script>
+// 手機模式（遊戲裡設定 window.tsWantFullscreen）：點一下畫面就進入全螢幕、鎖橫向。
+// 瀏覽器規定全螢幕只能在玩家點擊的當下要求，所以掛在 touchend / click 上。
+// iPhone 的 Safari 不支援網頁全螢幕（這裡什麼都不會發生），要用「加入主畫面」。
+window.tsWantFullscreen = false;
+function tsFullscreen() {
+	if (!window.tsWantFullscreen) return;
+	var d = document;
+	if (d.fullscreenElement || d.webkitFullscreenElement) return;
+	var el = d.documentElement;
+	var req = el.requestFullscreen || el.webkitRequestFullscreen;
+	if (!req) return;
+	try {
+		var p = req.call(el, { navigationUI: "hide" });
+		if (p && p.then) {
+			p.then(function () {
+				if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(function () {});
+			}).catch(function () {});
+		}
+	} catch (e) {}
+}
+document.addEventListener("touchend", tsFullscreen, true);
+document.addEventListener("click", tsFullscreen, true);
+</script>
 	</head>
 	<body>
 		<canvas id="canvas">
@@ -104,14 +132,14 @@ body {
 		</noscript>
 
 		<div id="status">
-			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="game_20261119-225903.png" alt="">
+			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="game_20261119-230626.png" alt="">
 			<progress id="status-progress"></progress>
 			<div id="status-notice"></div>
 		</div>
 
-		<script src="game_20261119-225903.js"></script>
+		<script src="game_20261119-230626.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"game_20261119-225903","experimentalVK":false,"fileSizes":{"game_20261119-225903.pck":2415024,"game_20261119-225903.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"game_20261119-230626","experimentalVK":false,"fileSizes":{"game_20261119-230626.pck":2415520,"game_20261119-230626.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 

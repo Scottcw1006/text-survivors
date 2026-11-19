@@ -13,6 +13,8 @@ printf '## 由 build_web.sh 自動產生，不要手改\nconst TEXT := "%s"\n' "
 
 godot --headless --export-release "Web" "docs/game_${VER}.html"
 mv "docs/game_${VER}.html" docs/index.html
+# 加入主畫面用的圖示（manifest.webmanifest 指向這個固定的檔名）
+cp "docs/game_${VER}.apple-touch-icon.png" docs/app-icon.png
 rm -f docs/index.js docs/index.wasm docs/index.pck docs/index.png docs/index.icon.png \
 	docs/index.apple-touch-icon.png docs/index.audio.worklet.js docs/index.audio.position.worklet.js
 

@@ -280,6 +280,7 @@ const POWER_INFO := {
 const XP_FIRST_LEVEL := 6           # 升到 2 級要幾個金
 const XP_STEP := 4                  # 之後每級多要幾個
 const UPGRADE_MAX_LEVEL := 7          # 一般升級（力、疾…）每種最多幾級
+const UPGRADE_MAX_LEVEL_HELL := 10    # 地獄難度的上限
 ## who：all = 兩個角色都有，否則只給那個角色
 const UPGRADES := [
 	{"id": "power",  "icon": "力", "name": "攻擊力",   "desc": "傷害 +20%", "who": "all"},
@@ -3117,10 +3118,15 @@ func _gain_xp(amount: int) -> void:
 
 
 ## 這個角色還能升的選項
+## 一般升級每種最多幾級（地獄比較高）
+func _upgrade_max() -> int:
+	return UPGRADE_MAX_LEVEL_HELL if DIFFICULTIES[difficulty].get("hell", false) else UPGRADE_MAX_LEVEL
+
+
 func _available_upgrades() -> Array:
 	var who: String = CHARACTERS[character].glyph
 	return UPGRADES.filter(func(u: Dictionary) -> bool:
-		return (u.who == "all" or u.who == who) and upgrade_levels.get(u.id, 0) < UPGRADE_MAX_LEVEL)
+		return (u.who == "all" or u.who == who) and upgrade_levels.get(u.id, 0) < _upgrade_max())
 
 
 func _open_level_up() -> void:

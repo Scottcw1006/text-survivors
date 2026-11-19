@@ -14,16 +14,16 @@ const REROLL_PER_LEVEL := 3
 ## 鑽石升級的項目：id、名稱、最高等級、每一級要幾個 鑽
 ## 一般升級的 id 跟 main.gd 的 UPGRADES 一樣（power、haste…），前面加 "up_"
 const ITEMS := [
-	{"id": "up_power",  "icon": "力", "name": "攻擊力",   "max": 3, "cost": [1, 1, 1]},
-	{"id": "up_haste",  "icon": "疾", "name": "攻擊速度", "max": 3, "cost": [1, 1, 1]},
+	{"id": "up_power",  "icon": "力", "name": "攻擊力",   "max": 4, "cost": [1, 1, 1, 1]},
+	{"id": "up_haste",  "icon": "疾", "name": "攻擊速度", "max": 4, "cost": [1, 1, 1, 1]},
 	# 穿／廣：同一項，人開局升「穿」、刀開局升「廣」
-	{"id": "up_pierce_reach", "icon": "穿", "name": "穿透／斬擊範圍", "max": 3, "cost": [1, 1, 1]},
-	{"id": "up_speed",  "icon": "速", "name": "移動速度", "max": 3, "cost": [1, 1, 1]},
-	{"id": "up_vital",  "icon": "體", "name": "體魄",     "max": 3, "cost": [1, 1, 1]},
-	{"id": "up_magnet", "icon": "磁", "name": "吸金",     "max": 3, "cost": [1, 1, 1]},
-	{"id": "up_focus",  "icon": "息", "name": "調息",     "max": 3, "cost": [1, 1, 1]},
-	{"id": "reroll",    "icon": "換", "name": "重抽次數 +3", "max": 2, "cost": [1, 1]},
-	{"id": "chest",     "icon": "寶", "name": "開局寶箱",   "max": 2, "cost": [5, 5]},
+	{"id": "up_pierce_reach", "icon": "穿", "name": "穿透／斬擊範圍", "max": 4, "cost": [1, 1, 1, 1]},
+	{"id": "up_speed",  "icon": "速", "name": "移動速度", "max": 4, "cost": [1, 1, 1, 1]},
+	{"id": "up_vital",  "icon": "體", "name": "體魄",     "max": 4, "cost": [1, 1, 1, 1]},
+	{"id": "up_magnet", "icon": "磁", "name": "吸金",     "max": 4, "cost": [1, 1, 1, 1]},
+	{"id": "up_focus",  "icon": "息", "name": "調息",     "max": 4, "cost": [1, 1, 1, 1]},
+	{"id": "reroll",    "icon": "換", "name": "重抽次數 +3", "max": 3, "cost": [1, 1, 1]},
+	{"id": "chest",     "icon": "寶", "name": "開局寶箱",   "max": 3, "cost": [5, 5, 5]},
 ]
 
 static var tokens := 0

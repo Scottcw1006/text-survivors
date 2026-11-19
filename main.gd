@@ -184,6 +184,7 @@ const SHADE_WEAK := 0.5               # Lv1～3 分身傷害倍率
 const SHADE_SHARE := 0.3              # 分身吃到本體升級（力、廣、疾）的幾成
 const EXPLOSION_LINGER := 0.5         # 爆炸的字留在畫面上多久（只打一次）
 # ---------- 蘇生（寶箱卡片，可以重複拿） ----------
+const REVIVE_MAX := 3                 # 一局最多選幾次「蘇」
 const REVIVE_HP := 25                 # 蘇生後的血量
 const REVIVE_INVINCIBLE := 3.0        # 蘇生後無敵幾秒
 const HEAL_INTERVAL := 25.0          # 每幾秒出現一顆補血愛心
@@ -403,6 +404,8 @@ var blade_lv := 1                  # 強化線「刀」
 var cannon_lv := 0                 # 強化線「砲」（只有人有，從 Lv0 開始）
 var shadow_lv := 0                 # 強化線「影」（只有刀有，從 Lv0 開始）
 var revives := 0                   # 還有幾次蘇生（寶箱「蘇」卡）
+var revive_picks := 0              # 這一局選過幾次「蘇」（最多 REVIVE_MAX 次）
+var all_maxed := false             # 武器線和蘇都滿了：寶箱全部消失、不再出現
 var shades: Array[Shade] = []      # 影分身
 ## 刀的攻擊從哪裡出、傷害倍率多少：平常是主角本人，影分身出手時暫時換成分身的位置
 var atk_from := Vector2.ZERO
@@ -919,7 +922,13 @@ const ENDLESS_WAVE_MID_TIME := 540.0  # 9 分鐘起每 1 分鐘一波
 const ENDLESS_WAVE_MID := 60.0
 const ENDLESS_WAVE_FAST_TIME := 720.0 # 12 分鐘起每 30 秒一波
 const ENDLESS_WAVE_FAST := 30.0
-const ENDLESS_HP_STEP := 60.0         # 怪物血量每 60 秒提升一次
+const ENDLESS_HP_STEP := 50.0         # 每 50 秒提升一階：血量 +15%、速度 +5%
+const ENDLESS_SPEED_GROWTH := 0.05    # 每一階速度 +5%
+const ENDLESS_SPEED_MAX := 2.0        # 速度最多 2 倍（太快就沒辦法玩了）
+const ENDLESS_KING_MID_TIME := 540.0  # 9 分鐘起每 30 秒一隻小王
+const ENDLESS_KING_MID := 30.0
+const ENDLESS_KING_FAST_TIME := 720.0 # 12 分鐘起每 10 秒一隻小王
+const ENDLESS_KING_FAST := 10.0
 const ENDLESS_FIRE_TIME := 360.0      # 6 分鐘後牆變成焰
 const ENDLESS_HELL_START := 60.0      # 1 分鐘開始，每 50 秒有一種小兵變成地獄版，9 分 20 秒全部到齊
 const ENDLESS_HELL_GAP := 50.0
@@ -1443,6 +1452,16 @@ func _base_music() -> String:
 	return "hell" if DIFFICULTIES[difficulty].get("hell", false) or endless_fire else "main"
 
 
+## 小王（每分鐘的王）多久來一隻：無盡 9 分鐘起每 30 秒、12 分鐘起每 10 秒
+func _king_gap(t: float) -> float:
+	if _endless():
+		if t >= ENDLESS_KING_FAST_TIME:
+			return ENDLESS_KING_FAST
+		if t >= ENDLESS_KING_MID_TIME:
+			return ENDLESS_KING_MID
+	return BOSS_INTERVAL
+
+
 ## 無盡：這一波大王之後，下一波什麼時候出（2 分鐘一波 → 9 分鐘起每 1 分鐘 → 12 分鐘起每 30 秒）
 func _next_wave_after(w: float) -> float:
 	if w >= ENDLESS_WAVE_FAST_TIME:
@@ -1492,7 +1511,7 @@ func _start_wave(chest := true) -> void:
 func _spawn_enemies(delta: float) -> void:
 	# 每分鐘來一隻王
 	if not final_phase and elapsed >= next_boss_time and (next_boss_time < GAME_DURATION or _endless()):
-		next_boss_time += BOSS_INTERVAL
+		next_boss_time += _king_gap(next_boss_time)
 		var bp := _find_spawn_point()
 		if bp != Vector2.INF:
 			_spawn_boss(_pick_boss_type(), bp, false)
@@ -1570,7 +1589,7 @@ func _spawn_boss(kind: String, pos: Vector2, big: bool) -> Enemy:
 			"犇":
 				t["dashes"] = 2
 	var e := Enemy.new().setup_type(kind, t, _hp_mult())
-	e.speed *= DIFFICULTIES[difficulty].speed
+	e.speed *= DIFFICULTIES[difficulty].speed * _speed_mult()
 	e.label = ("大" + kind) if big else kind
 	e.set_text(e.label)
 	e.position = pos
@@ -1633,6 +1652,13 @@ func _pick_enemy_type() -> String:
 
 
 ## 怪物血量倍率：隨時間成長 × 難度
+## 無盡：速度倍率（每 50 秒 +5%，最多 2 倍）
+func _speed_mult() -> float:
+	if not _endless():
+		return 1.0
+	return minf(1.0 + ENDLESS_SPEED_GROWTH * floorf(elapsed / ENDLESS_HP_STEP), ENDLESS_SPEED_MAX)
+
+
 func _hp_mult() -> float:
 	if _endless():
 		return (1.0 + ENDLESS_HP_GROWTH * floorf(elapsed / ENDLESS_HP_STEP)) * DIFFICULTIES[difficulty].hp
@@ -1641,7 +1667,7 @@ func _hp_mult() -> float:
 
 func _spawn_enemy(kind: String, pos: Vector2) -> void:
 	var e := Enemy.new().setup_type(kind, ENEMY_TYPES[kind], _hp_mult())
-	e.speed *= DIFFICULTIES[difficulty].speed
+	e.speed *= DIFFICULTIES[difficulty].speed * _speed_mult()
 	e.position = pos
 	e.z_index = 3 if ENEMY_TYPES[kind].get("boss", false) else 2
 	e.shoot_interval = ARROW_INTERVAL
@@ -2981,12 +3007,33 @@ func _spawn_chest_near(pos: Vector2) -> void:
 
 
 func _place_chest(pos: Vector2) -> void:
+	if all_maxed:
+		return   # 全部滿級：不再出寶箱
 	var c := Chest.new()
 	c.node = Glyph.new().setup("寶", GLYPH_SIZE, COLOR_CHEST)
 	c.node.position = pos
 	c.node.z_index = 1
 	add_child(c.node)
 	chests.append(c)
+
+
+## 武器線全滿、蘇也拿滿 3 次：場上的寶箱全部消失，之後也不會再出現
+func _check_all_maxed() -> void:
+	if all_maxed or revive_picks < REVIVE_MAX:
+		return
+	for line: String in _lines():
+		if _line_level(line) < LINE_MAX:
+			return
+	all_maxed = true
+	pending_power = 0
+	for c in chests:
+		var p := particles.add("寶", c.node.position, Vector2(0, -30), 0.5, GLYPH_SIZE, COLOR_CHEST)
+		p.grow = 1.0
+		c.node.queue_free()
+	chests.clear()
+	chest_pointer.visible = false
+	var t := particles.add("全部強化完成！", player.position + Vector2(0, -90), Vector2(0, -30), 2.0, 44, Color(1.0, 0.85, 0.4))
+	t.drag = 1.0
 
 
 ## 打開寶箱：排一次「彈 / 刀」二選一
@@ -3006,12 +3053,10 @@ func _open_power_up() -> void:
 	for line: String in _lines():
 		if _line_level(line) < LINE_MAX:
 			opts.append(line)
-	opts.append("蘇")   # 蘇生：每次開寶箱都可以選，可以重複拿
+	if revive_picks < REVIVE_MAX:
+		opts.append("蘇")   # 蘇生：一局最多選 3 次
 	if opts.is_empty():
-		# 全部都滿了：改成在身邊灑 20 個金（不補血）
-		for i in 20:
-			_drop_gold(player.position + Vector2.from_angle(randf() * TAU) * randf_range(20.0, 60.0))
-		return
+		return   # 全部都滿了（正常不會發生，滿了就不會再出寶箱）
 	power_choices = opts
 	power_cursor = 0
 	state = State.POWER_UP
@@ -3038,8 +3083,8 @@ func _show_power_up() -> void:
 	var cards := []
 	for line: String in power_choices:
 		if line == "蘇":
-			cards.append({"icon": "蘇", "name": "蘇生", "sub": "持有 %d→%d" % [revives, revives + 1],
-					"desc": "死掉時復活一次，\n回到 %d 血，\n%d 秒無敵\n（可以重複拿）" % [REVIVE_HP, int(REVIVE_INVINCIBLE)]})
+			cards.append({"icon": "蘇", "name": "蘇生", "sub": "Lv %d→%d" % [revive_picks, revive_picks + 1],
+					"desc": "死掉時復活一次，\n回到 %d 血，\n%d 秒無敵\n（一局最多 %d 次）" % [REVIVE_HP, int(REVIVE_INVINCIBLE), REVIVE_MAX]})
 			continue
 		var info: Dictionary = POWER_INFO[who][line]
 		var lv := _line_level(line)
@@ -3064,8 +3109,11 @@ func _process_power_up() -> void:
 			"刀": blade_lv += 1
 			"砲": cannon_lv += 1
 			"影": shadow_lv += 1
-			"蘇": revives += 1
+			"蘇":
+				revives += 1
+				revive_picks += 1
 		start_pick = false
+		_check_all_maxed()
 		level_cards.visible = false
 		state = State.PLAYING
 		_update_hud()
@@ -3679,6 +3727,8 @@ func _update_hud() -> void:
 	else:
 		hud_time.text = _fmt_time(GAME_DURATION - elapsed)
 	hud_kills.text = "級 %d　金 %d/%d　擊倒 %d\n敵血 ×%.1f" % [level, xp, _xp_needed(), kills, _hp_mult()]
+	if _endless():
+		hud_kills.text += "　敵速 ×%.2f" % _speed_mult()
 
 
 func _end(result: State) -> void:

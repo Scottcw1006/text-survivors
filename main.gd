@@ -919,10 +919,10 @@ const ENDLESS_WAVE_MID_TIME := 540.0  # 9 分鐘起每 1 分鐘一波
 const ENDLESS_WAVE_MID := 60.0
 const ENDLESS_WAVE_FAST_TIME := 720.0 # 12 分鐘起每 30 秒一波
 const ENDLESS_WAVE_FAST := 30.0
-const ENDLESS_HP_STEP := 50.0         # 怪物血量每 50 秒提升一次
+const ENDLESS_HP_STEP := 60.0         # 怪物血量每 60 秒提升一次
 const ENDLESS_FIRE_TIME := 360.0      # 6 分鐘後牆變成焰
-const ENDLESS_HELL_START := 60.0      # 1 分鐘開始，每 36 秒有一種小兵變成地獄版，7 分鐘全部到齊
-const ENDLESS_HELL_GAP := 36.0
+const ENDLESS_HELL_START := 60.0      # 1 分鐘開始，每 50 秒有一種小兵變成地獄版，9 分 20 秒全部到齊
+const ENDLESS_HELL_GAP := 50.0
 const ENDLESS_HELL_ORDER := ["敵", "鼠", "甲", "弓", "鳥", "弩", "冑", "魂", "鬼", "牛", "犇"]
 const ENDLESS_HELL_NOTES := {
 	"敵": "開始會突然衝刺了！", "鼠": "開始成群包抄了！", "甲": "被打之後會變硬了！",

@@ -149,6 +149,7 @@ const BULLET_SIZE := 22
 const GRID_CELL := 48.0             # 碰撞用的空間格子，要 >= 最大碰撞距離
 
 const COLOR_PLAYER := Color.WHITE
+const COLOR_FIRE := Color(1.0, 0.4, 0.15)
 const COLOR_ARROW := Color(0.65, 0.35, 0.9)
 const COLOR_ENEMY_BOSS := Color(1.0, 0.2, 0.2)
 const COLOR_CHEST := Color(0.45, 0.85, 1.0)
@@ -301,6 +302,8 @@ enum State { SELECT, PLAYING, LEVEL_UP, DEAD, WON, POWER_UP, PAUSED, META }
 
 
 class Bullet:
+	var src := ""                   # 誰射的（矢用：結算畫面的死因）
+	var src_color := Color.WHITE
 	var homing := false             # 地獄弩：會慢慢轉向追蹤主角
 	var node: Glyph
 	var vel: Vector2
@@ -1118,13 +1121,30 @@ func _check_player_hit(delta: float) -> void:
 		return
 	# 地獄：碰到「焰」牆就受傷
 	if DIFFICULTIES[difficulty].get("fire_walls", false) and terrain.overlaps_wall(player.position, PLAYER_RADIUS + 3.0):
-		_hurt_player(FIRE_WALL_DAMAGE)
+		_hurt_player(FIRE_WALL_DAMAGE, [["被", null], ["焰", COLOR_FIRE], ["燒倒了", null]])
 		return
 	for e: Enemy in _nearby(player.position):
 		if e.position.distance_to(player.position) < PLAYER_RADIUS + e.radius:
 			e.stun = ATTACK_PAUSE   # 攻擊成功的敵人原地停一下，玩家才甩得掉（例如很快的鳥）
-			_hurt_player(e.damage)
+			_hurt_player(e.damage, _contact_cause(e))
 			return
+
+
+## 被敵人撞到的死因：「被[牛]撞飛了」，敵人的字用牠的顏色
+const CONTACT_VERBS := {
+	"敵": "打倒了", "鼠": "咬倒了", "甲": "撞倒了", "弓": "打倒了", "鳥": "啄倒了", "弩": "打倒了",
+	"冑": "壓倒了", "魂": "纏住了", "鬼": "帶走了", "牛": "撞飛了", "犇": "撞飛了",
+}
+
+
+func _who(e: Enemy) -> String:
+	if e.is_boss and not e.label.begins_with("大"):
+		return e.label + "王"   # 每分鐘的王：「甲王」
+	return e.label
+
+
+func _contact_cause(e: Enemy) -> Array:
+	return [["被", null], [_who(e), e.base_color], [CONTACT_VERBS.get(e.kind, "打倒了"), null]]
 
 
 ## 技能中、落地後、剛被打過都不會受傷
@@ -1132,10 +1152,14 @@ func _player_vulnerable() -> bool:
 	return skill_time <= 0.0 and land_grace <= 0.0 and invincible <= 0.0
 
 
-func _hurt_player(amount: int) -> void:
+var death_cause: Array = []          # 最後一次受傷是被什麼打的（結算畫面用）
+
+
+func _hurt_player(amount: int, cause: Array = []) -> void:
 	if not _player_vulnerable():
 		return
 	audio.play("hurt")
+	death_cause = cause
 	hp -= amount
 	invincible = INVINCIBLE_TIME
 	_shake(10.0)
@@ -1666,7 +1690,7 @@ func _enemy_blast(e: Enemy) -> void:
 	_add_fx(fx, 0.3)
 	_shake(4.0)
 	if player.position.distance_to(e.position) < BLAST_RADIUS + PLAYER_RADIUS:
-		_hurt_player(BLAST_DAMAGE)
+		_hurt_player(BLAST_DAMAGE, [["被", null], [_who(e), e.base_color], ["的爆炸炸飛了", null]])
 
 
 ## 大魂：放出一圈半徑 3 格的無敵領域，裡面的敵人 1 秒內完全不受傷
@@ -1760,7 +1784,7 @@ func _update_hazards(delta: float) -> void:
 			hazards.remove_at(i)
 			continue
 		if _player_vulnerable() and g.position.distance_to(player.position) < PLAYER_RADIUS + 14.0:
-			_hurt_player(HELL_TRAIL_DAMAGE)
+			_hurt_player(HELL_TRAIL_DAMAGE, [["被", null], ["犇", ENEMY_TYPES["犇"]["color"]], ["留下的", null], ["焰", COLOR_FIRE], ["燒倒了", null]])
 
 
 ## 放箭；volley > 1 時一次放一排扇形的箭（大弓）
@@ -1777,6 +1801,8 @@ func _shoot_arrow(e: Enemy) -> void:
 		b.life = ARROW_LIFETIME
 		b.damage = ARROW_DAMAGE
 		b.homing = e.hell and e.kind == "弩"
+		b.src = _who(e)
+		b.src_color = e.base_color
 		add_child(b.node)
 		arrows.append(b)
 
@@ -1793,7 +1819,7 @@ func _move_arrows(delta: float) -> void:
 		b.life -= delta
 		var done := b.life <= 0.0 or terrain.is_wall(terrain.cell_of(b.node.position))
 		if not done and _player_vulnerable() and b.node.position.distance_to(player.position) < PLAYER_RADIUS + 6.0:
-			_hurt_player(int(b.damage))
+			_hurt_player(int(b.damage), [["被", null], [b.src, b.src_color], ["的", null], ["矢", COLOR_ARROW], ["射倒了", null]])
 			done = true
 		if done:
 			b.node.queue_free()
@@ -3475,9 +3501,12 @@ func _end(result: State) -> void:
 	_update_hud()
 	player.modulate.a = 1.0
 	var title := "你擊敗了最終王！"
+	var title_parts: Array = []
 	if result == State.DEAD:
 		title = "你倒下了"
 		player.set_text("亡")
+		if not death_cause.is_empty():
+			title_parts = death_cause   # 「被[牛]撞飛了」，敵人的字上色
 	if tokens_earned < 0:
 		tokens_earned = Meta.tokens_for_run(elapsed, result == State.WON)
 		Meta.tokens += tokens_earned
@@ -3489,6 +3518,8 @@ func _end(result: State) -> void:
 	else:
 		level_cards.show_cards(title, _final_level_cards(), -1, "按 Space / Enter 再來一局", stats)
 	level_cards.set_side("擊倒", _kill_rows())
+	if not title_parts.is_empty():
+		level_cards.set_title_parts(title_parts)
 
 
 ## 結算畫面右邊的擊倒統計：照 ENEMY_TYPES 的順序，只列有打倒的種類

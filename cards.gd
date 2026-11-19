@@ -42,6 +42,7 @@ var opt_sel := 0
 var opt_hint := ""
 var opt_descs: Array = []          # 每個選項的說明，選中的那個顯示在面板下面
 var opt_rects: Array[Rect2] = []
+var title_parts: Array = []        # 有的話用這個畫標題：[[字, 顏色或 null], ...]，可以一段一段上色
 var side_title := ""               # 卡片右邊的統計面板（結算的擊倒數），空字串 = 沒有
 var side_rows: Array = []          # [{glyph, color, text}]
 var button := ""                   # 卡片下面的按鈕文字（結算的「再來一局」），空字串 = 沒有按鈕
@@ -53,6 +54,7 @@ func show_cards(t: String, c: Array, selected: int, h: String, sub_title := "", 
 	button = button_text
 	opt_label = ""
 	side_title = ""
+	title_parts = []
 	tips = tip_cards
 	subtitle = sub_title
 	cards = c
@@ -70,6 +72,28 @@ func set_options(label: String, items: Array, selected: int, hint_text: String, 
 	opt_sel = selected
 	opt_hint = hint_text
 	queue_redraw()
+
+
+## 標題改成一段一段上色的字（要在 show_cards 之後叫）
+func set_title_parts(parts: Array) -> void:
+	title_parts = parts
+	queue_redraw()
+
+
+## 畫上色的標題：整串置中，每一段各自的顏色（null = 白色）
+func _draw_title(center: Vector2, font_size: int) -> void:
+	if title_parts.is_empty():
+		_text(title, center, font_size, COLOR_ON)
+		return
+	var total := 0.0
+	for part: Array in title_parts:
+		total += font.get_string_size(part[0], HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+	var x := center.x - total / 2.0
+	var y := center.y + font.get_ascent(font_size) - font.get_height(font_size) / 2.0
+	for part: Array in title_parts:
+		var c: Color = COLOR_ON if part[1] == null else part[1]
+		draw_string(font, Vector2(x, y), part[0], HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, c)
+		x += font.get_string_size(part[0], HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 
 
 ## 在卡片右邊加一個統計面板（要在 show_cards 之後叫）
@@ -152,13 +176,13 @@ func _draw() -> void:
 
 	var oy := 0.0
 	if subtitle != "":
-		_text(title, Vector2(view.x / 2.0, y0 - 100.0 - oy), 44, COLOR_ON)
+		_draw_title(Vector2(view.x / 2.0, y0 - 100.0 - oy), 44)
 		_text(subtitle, Vector2(view.x / 2.0, y0 - 48.0 - oy), 33, COLOR_ON)
 		var sw := font.get_string_size(subtitle, HORIZONTAL_ALIGNMENT_LEFT, -1, 33).x
 		subtitle_rect = _scaled(Rect2(view.x / 2.0 - sw / 2.0 - 20.0, y0 - 48.0 - oy - 30.0, sw + 40.0, 60.0), k)
 	else:
 		subtitle_rect = Rect2()
-		_text(title, Vector2(view.x / 2.0, y0 - 56.0 - oy), 44, COLOR_ON)
+		_draw_title(Vector2(view.x / 2.0, y0 - 56.0 - oy), 44)
 
 	card_rects.clear()
 	for i in n:

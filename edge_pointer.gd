@@ -8,6 +8,7 @@ const TRI_LEN := 64.0           # 三角形從底邊到尖端多長
 const TRI_HALF := 42.0          # 三角形底邊的一半寬
 const GAP := 18.0               # 三角形和字之間的距離
 const FONT_SIZE := 66
+const HEART_PX := 9.0            # 愛心每一格多大（7 格寬 ≈ 63，跟 66 號字差不多大）
 
 var text := ""
 var color := Color.WHITE
@@ -33,7 +34,7 @@ func _draw() -> void:
 
 	# 字（或愛心）放在三角形往畫面裡面一點的地方
 	var font := Glyph.font
-	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x if not heart else 40.0
+	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x if not heart else HEART_PX * 7.0
 	var reach := TRI_LEN * 0.4 + GAP + maxf(w, 60.0) / 2.0 * (absf(d.x) + absf(d.y) * 0.6)
 	var c := -d * reach
 	if heart:
@@ -51,7 +52,7 @@ func _draw() -> void:
 
 ## 愛心（跟補血道具同一個形狀，放大一點）
 func _draw_heart(center: Vector2) -> void:
-	var px := 6.0
+	var px := HEART_PX
 	var shape: Array = HeartPickup.SHAPE
 	var w: int = shape[0].length()
 	var hh := shape.size()

@@ -1,7 +1,7 @@
 class_name TouchControls
 extends Control
 ## 手機觸控操作（選角時選「手機」模式才有虛擬搖桿和按鍵）：
-## - 遊戲中：手指在螢幕上拖曳 = 虛擬搖桿（從按下的地方開始算方向）
+## - 遊戲中：手指在螢幕上拖曳 = 虛擬搖桿（從按下的地方開始算方向，拖太遠中心會跟著手指走）
 ## - 右下角兩顆虛擬按鍵：「技」= Shift，「天」= 滑鼠左鍵；右上角「停」= Esc 暫停、「音」= M 靜音
 ## - 選單：點卡片選它，再點一次已選的卡片 = 確定；結算畫面點「再來一局」按鈕
 ##   （選單用滑鼠點也可以，電腦模式也能用）
@@ -154,9 +154,12 @@ func _send(action: String, pressed: bool) -> void:
 
 
 func _update_stick() -> void:
+	# 手指拖超過搖桿半徑時，搖桿中心跟著手指走：
+	# 就算一開始按在螢幕最邊邊，往裡面拖一下再拖回來，也能全速往邊邊那個方向走
+	var off := _stick_pos - _stick_origin
+	if off.length() > STICK_RADIUS:
+		_stick_origin = _stick_pos - off.normalized() * STICK_RADIUS
 	var v := (_stick_pos - _stick_origin) / STICK_RADIUS
-	if v.length() > 1.0:
-		v = v.normalized()
 	move = v if v.length() > STICK_DEAD else Vector2.ZERO
 	queue_redraw()
 

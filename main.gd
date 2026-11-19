@@ -1132,6 +1132,9 @@ func _pick_hint() -> String:
 func _apply_screen_scale() -> void:
 	var base := Vector2i(1280, 720) if is_touch else Vector2i(2560, 1440)
 	get_window().content_scale_size = base
+	# 手機：畫面填滿整個螢幕（比 16:9 寬的手機左右看得多一點），不留黑邊，
+	# 搖桿和按鍵才會貼著真正的螢幕邊緣；電腦維持 16:9 加黑邊
+	get_window().content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND if is_touch else Window.CONTENT_SCALE_ASPECT_KEEP
 	# 手機畫面比較窄，時間／決戰那行放到第二排，才不會跟左邊的血條疊在一起
 	if hud_time != null:
 		hud_time.position.y = 70 if is_touch else 16

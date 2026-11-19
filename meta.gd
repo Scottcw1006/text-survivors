@@ -27,6 +27,7 @@ const ITEMS := [
 ]
 
 static var tokens := 0
+static var endless_best := 0.0      # 無盡模式的最高紀錄（秒）
 static var levels := {}
 static var _loaded := false
 
@@ -39,6 +40,7 @@ static func load_save() -> void:
 	if cfg.load(PATH) != OK:
 		return
 	tokens = int(cfg.get_value("meta", "tokens", 0))
+	endless_best = float(cfg.get_value("meta", "endless_best", 0.0))
 	levels = cfg.get_value("meta", "levels", {})
 	# 舊存檔：穿、廣原本分開，合併成一項（取比較高的那個，另一個退回鑽）
 	if levels.has("up_pierce") or levels.has("up_reach"):
@@ -54,6 +56,7 @@ static func load_save() -> void:
 static func save() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("meta", "tokens", tokens)
+	cfg.set_value("meta", "endless_best", endless_best)
 	cfg.set_value("meta", "levels", levels)
 	cfg.save(PATH)
 
@@ -94,7 +97,9 @@ static func refund_all() -> int:
 
 
 ## 這一局拿到幾個 鑽：每滿一分鐘 1 個（最多 3 個），打倒最終王 +2
-static func tokens_for_run(seconds: float, won: bool) -> int:
+static func tokens_for_run(seconds: float, won: bool, endless := false) -> int:
+	if endless:
+		return int(seconds / 60.0) * TOKEN_PER_MINUTE   # 無盡：每分鐘 1 個，沒有上限
 	var n := mini(int(seconds / 60.0) * TOKEN_PER_MINUTE, TOKEN_MINUTE_CAP)
 	if won:
 		n += TOKEN_WIN_BONUS

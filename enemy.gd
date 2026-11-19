@@ -24,6 +24,7 @@ var shoot_range := 300.0   # 遠程敵人：多近開始放箭
 var shoot_interval := 2.0  # 遠程敵人：幾秒放一次箭
 var arrow_speed := 220.0   # 遠程敵人：矢飛多快
 var volley := 1            # 遠程敵人：一次放幾支箭（扇形）
+var drop_chest := false    # 無盡模式：每一波大王只有第一隻會掉寶箱
 var label := ""            # 顯示的字（王：大字的「甲」；最終王：「大鬼」…），統計、提示用這個
 var shield_max := 0        # 王魂、王鬼、大魂、大鬼：無敵次數會定時重置回這個數
 var shield_every := 0.0    # 幾秒重置一次無敵（0 = 不重置）

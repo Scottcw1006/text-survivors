@@ -455,6 +455,15 @@ var hearts: Array[HeartPickup] = []
 var heart_pointer: EdgePointer      # 最近的愛心在畫面外時，畫面邊緣的提示
 var final_phase := false           # 三分鐘後的決戰：還是會掉金，但不再出寶箱
 var final_bosses: Array[Enemy] = []
+var wave_active := false            # 無盡：現在有一波大王還沒打完（血條、紅框用 final_bosses）
+var wave_num := 0
+var next_wave_time := ENDLESS_WAVE_EVERY
+var hell_active := {}               # 無盡：哪些小兵已經變成地獄版
+var hell_next := 0                  # 無盡：下一個要變強的是 ENDLESS_HELL_ORDER 第幾個
+var endless_fire := false           # 無盡：牆已經變成焰
+var intro_text := "最終決戰"         # 開場大字（決戰／大王來襲）
+var hud_notice: RichTextLabel       # 無盡：畫面上方的提示（某種敵人變強了）
+var notice_time := 0.0
 var final_roster: Array[String] = []  # 決戰一開始有哪些王（照順序），血條用；死掉的從 final_bosses 拿掉
 var smite_used := false            # 天罰一局只能用一次
 
@@ -491,6 +500,7 @@ var final_hint_time := 0.0          # 提示還要顯示幾秒
 var final_intro := 0.0              # 最終決戰開場停頓還剩幾秒
 var _intro_shown := 0               # 「最終決戰」已經出現幾個字
 var celebrate := 0.0                # 過關煙火還剩幾秒
+var celebrate_banner := 0.0         # 無盡：「擊退！」大字還顯示幾秒
 var firework_cd := 0.0
 var big_banner: Label               # 畫面正中間的大字（最終決戰、過關）
 var hud_kills: Label
@@ -505,6 +515,7 @@ var _smiting := false                # 天罰清怪中（地獄冑不爆炸）
 var hazards: Array = []             # 地獄犇留下的焰：[{node, life}]
 var start_pick := false             # 開局選武器中（跟寶箱共用卡片畫面）
 var rerolls_left := 0               # 這一局升級時還能重抽幾次
+var new_record := false
 var tokens_earned := -1             # 這一局拿到幾個 鑽（結算時算一次）
 var _ignore_click_frame := -1       # 點暫停畫面的「繼續」那一格，不要觸發天罰
 var is_touch := false               # 有觸控螢幕就開手機操作
@@ -594,13 +605,13 @@ func _process(delta: float) -> void:
 	if final_intro > 0.0:
 		final_intro -= delta
 		# 一個字一個字跳出來：最 → 最終 → 最終決 → 最終決戰，每個字出來時震一下
-		var shown := clampi(int((FINAL_INTRO_TIME - final_intro) / INTRO_CHAR_GAP) + 1, 1, INTRO_TEXT.length())
+		var shown := clampi(int((FINAL_INTRO_TIME - final_intro) / INTRO_CHAR_GAP) + 1, 1, intro_text.length())
 		if shown != _intro_shown:
 			_intro_shown = shown
 			# 還沒出來的字用全形空白佔位，字的位置才不會跟著移動
 			var chars := []
-			for i in INTRO_TEXT.length():
-				chars.append(INTRO_TEXT[i] if i < shown else "　")
+			for i in intro_text.length():
+				chars.append(intro_text[i] if i < shown else "　")
 			big_banner.text = " ".join(chars)   # 字中間用半形空白
 			_shake(8.0)
 			audio.play("land")
@@ -623,7 +634,9 @@ func _process(delta: float) -> void:
 			hp = mini(hp + int(regen_acc), max_hp)
 			regen_acc -= floorf(regen_acc)
 	final_hint_time = maxf(0.0, final_hint_time - delta)
-	if not final_phase and elapsed >= GAME_DURATION:
+	if _endless():
+		_update_endless(delta)
+	elif not final_phase and elapsed >= GAME_DURATION:
 		_start_final_phase()
 	if final_phase and final_bosses.is_empty():
 		_start_celebration()
@@ -765,6 +778,8 @@ func _apply_meta_start() -> void:
 		for i in Meta.level(key):
 			_apply_upgrade(u.id)
 	rerolls_left = Meta.rerolls()
+	if _endless():
+		next_chest_time = ENDLESS_CHEST_INTERVAL
 	pending_power += Meta.level("chest")
 	_update_hud()
 
@@ -888,7 +903,26 @@ const DIFFICULTIES := [
 	# 地獄：在困難上面再加強；進階怪提早一半時間出現；牆變成會燙人的「焰」
 	{"name": "地獄", "hp": 2.25, "count": 1.44, "speed": 1.44, "banned": [], "unlock": 0.5, "fire_walls": true, "hell": true,
 		"desc": "比困難更強\n進階怪提早\n碰「焰」扣血"},
+	# 無盡：沒有決戰，一直玩到死；越來越難（數值見 ENDLESS_*）
+	{"name": "無盡", "hp": 1.0, "count": 1.0, "speed": 1.0, "banned": [], "unlock": 1.5, "endless": true,
+		"desc": "玩到死為止\n越來越難\n挑戰最高紀錄"},
 ]
+# ---------- 無盡模式 ----------
+const ENDLESS_HP_GROWTH := 0.15       # 怪物血量每分鐘 +15%（不會停）
+const ENDLESS_SPAWN_RAMP := 600.0     # 出怪速度到第 10 分鐘封頂
+const ENDLESS_CHEST_INTERVAL := 45.0  # 自動寶箱每 45 秒一個
+const ENDLESS_WAVE_EVERY := 120.0     # 每 2 分鐘一波大王，第 N 波 N 隻，只有第一隻掉寶箱
+const ENDLESS_FIRE_TIME := 360.0      # 6 分鐘後牆變成焰
+const ENDLESS_HELL_START := 60.0      # 1 分鐘開始，每 36 秒有一種小兵變成地獄版，7 分鐘全部到齊
+const ENDLESS_HELL_GAP := 36.0
+const ENDLESS_HELL_ORDER := ["敵", "鼠", "甲", "弓", "鳥", "弩", "冑", "魂", "鬼", "牛", "犇"]
+const ENDLESS_HELL_NOTES := {
+	"敵": "開始會突然衝刺了！", "鼠": "開始成群包抄了！", "甲": "被打之後會變硬了！",
+	"弓": "開始一次射三支箭了！", "鳥": "開始繞圈再俯衝了！", "弩": "射的箭開始會追人了！",
+	"冑": "死掉時會爆炸了！", "魂": "的無敵變成兩次了！", "鬼": "開始會隱形了！",
+	"牛": "蓄力變快、衝得更遠了！", "犇": "衝過的地方會留下焰了！",
+}
+const NOTICE_TIME := 3.0
 const FIRE_WALL_DAMAGE := 10          # 地獄：碰到「焰」扣幾滴血
 # ---------- 地獄難度：每種小兵的行為加強（王不受影響） ----------
 const HELL_RAT_GROUP := 6             # 鼠一群 6 隻，往兩側包抄
@@ -926,7 +960,7 @@ func set_difficulty(i: int) -> void:
 
 ## 地獄難度：牆變成紅色的「焰」
 func _apply_wall_style() -> void:
-	var fire: bool = DIFFICULTIES[difficulty].get("fire_walls", false)
+	var fire := _fire_walls()
 	terrain.wall_char = "焰" if fire else Terrain.WALL_CHAR
 	terrain.wall_color = Color(1.0, 0.35, 0.2) if fire else Terrain.WALL_COLOR
 	terrain.queue_redraw()
@@ -1121,7 +1155,7 @@ func _check_player_hit(delta: float) -> void:
 	if not _player_vulnerable():
 		return
 	# 地獄：碰到「焰」牆就受傷
-	if DIFFICULTIES[difficulty].get("fire_walls", false) and terrain.overlaps_wall(player.position, PLAYER_RADIUS + 3.0):
+	if _fire_walls() and terrain.overlaps_wall(player.position, PLAYER_RADIUS + 3.0):
 		_hurt_player(FIRE_WALL_DAMAGE, [["一不小心貼到", null], ["焰", COLOR_FIRE], ["，被燒成灰", null]])
 		return
 	for e: Enemy in _nearby(player.position):
@@ -1321,16 +1355,7 @@ func _start_final_phase() -> void:
 			pos = player.position + Vector2.from_angle(TAU * i / total) * get_viewport_rect().size.x * 0.55
 		var big := i == total - 1
 		var boss := _spawn_boss(bigs.pick_random() if big else _pick_boss_type(), pos, big)
-		boss.font_size = int(roundf(boss.font_size * FINAL_SIZE_MULT / 11.0)) * 11
-		boss.radius *= FINAL_SIZE_MULT
-		boss.max_hp *= FINAL_HP_MULT
-		boss.hp = boss.max_hp
-		boss.speed *= FINAL_SPEED_MULT
-		boss.knock_resist = 0.0   # 完全不吃擊退
-		boss.shoot_interval /= FINAL_FIRE_RATE_MULT
-		boss.arrow_speed *= FINAL_ARROW_SPEED_MULT
-		boss.shoot_cd = minf(boss.shoot_cd, boss.shoot_interval)
-		boss.queue_redraw()
+		_buff_final(boss)
 		final_bosses.append(boss)
 		final_roster.append(boss.label)
 	# 停 2 秒，畫面中間大大的「最終決戰」（也順便蓋掉生成最終王的卡頓）
@@ -1341,11 +1366,107 @@ func _start_final_phase() -> void:
 	final_hint_time = FINAL_HINT_TIME
 
 
+## 決戰／大王波的王：字放大、血兩倍、更快、不吃擊退、射箭更兇
+func _buff_final(boss: Enemy) -> void:
+	boss.font_size = int(roundf(boss.font_size * FINAL_SIZE_MULT / 11.0)) * 11
+	boss.radius *= FINAL_SIZE_MULT
+	boss.max_hp *= FINAL_HP_MULT
+	boss.hp = boss.max_hp
+	boss.speed *= FINAL_SPEED_MULT
+	boss.knock_resist = 0.0   # 完全不吃擊退
+	boss.shoot_interval /= FINAL_FIRE_RATE_MULT
+	boss.arrow_speed *= FINAL_ARROW_SPEED_MULT
+	boss.shoot_cd = minf(boss.shoot_cd, boss.shoot_interval)
+	boss.queue_redraw()
+
+
+# ---------- 無盡模式 ----------
+
+func _endless() -> bool:
+	return DIFFICULTIES[difficulty].get("endless", false)
+
+
+## 地圖現在是不是焰牆（地獄難度，或無盡 6 分鐘後）
+func _fire_walls() -> bool:
+	return DIFFICULTIES[difficulty].get("fire_walls", false) or endless_fire
+
+
+func _update_endless(delta: float) -> void:
+	if celebrate_banner > 0.0:
+		celebrate_banner -= delta
+		if celebrate_banner <= 0.0:
+			big_banner.visible = false
+	notice_time = maxf(0.0, notice_time - delta)
+	hud_notice.visible = notice_time > 0.0
+	hud_notice.modulate.a = clampf(notice_time, 0.0, 1.0)
+	# 小兵一種一種變成地獄版
+	if hell_next < ENDLESS_HELL_ORDER.size() and elapsed >= ENDLESS_HELL_START + ENDLESS_HELL_GAP * hell_next:
+		var kind: String = ENDLESS_HELL_ORDER[hell_next]
+		hell_next += 1
+		hell_active[kind] = true
+		for e: Enemy in enemies:
+			if e.kind == kind and not e.is_boss and not e.hell:
+				_make_hell(e)
+		var c: Color = ENEMY_TYPES[kind]["color"]
+		_notice("[color=#%s]%s[/color] %s" % [c.to_html(false), kind, ENDLESS_HELL_NOTES[kind]])
+	# 6 分鐘：牆變成焰
+	if not endless_fire and elapsed >= ENDLESS_FIRE_TIME:
+		endless_fire = true
+		_apply_wall_style()
+		_notice("牆全部變成了 [color=#%s]焰[/color]！碰到會受傷" % COLOR_FIRE.to_html(false))
+		_shake(10.0)
+	# 每 2 分鐘一波大王
+	if elapsed >= next_wave_time:
+		next_wave_time += ENDLESS_WAVE_EVERY
+		_start_wave()
+	if wave_active and final_bosses.is_empty():
+		wave_active = false
+		audio.play_music("main")
+		audio.play("level")
+		_show_big_banner("擊退！", Color(1.0, 0.85, 0.4))
+		celebrate_banner = 1.2
+
+
+func _notice(bbcode: String) -> void:
+	hud_notice.text = "[center]" + bbcode + "[/center]"
+	notice_time = NOTICE_TIME
+	audio.play("boss")
+
+
+## 一波大王：第 N 波 N 隻，只有第一隻掉寶箱
+func _start_wave() -> void:
+	wave_num += 1
+	wave_active = true
+	# 上一波還沒打完的大王留著，跟這一波疊在一起（血條一起顯示，全部打完才算擊退）
+	final_roster.clear()
+	for b in final_bosses:
+		final_roster.append(b.label)
+	audio.play("final")
+	audio.play_music("final")
+	var bigs := BIG_KINDS.filter(func(k: String) -> bool: return not DIFFICULTIES[difficulty].banned.has(k))
+	for i in wave_num:
+		var pos := _find_spawn_point()
+		if pos == Vector2.INF:
+			pos = player.position + Vector2.from_angle(TAU * i / wave_num) * get_viewport_rect().size.x * 0.55
+		var boss := _spawn_boss(bigs.pick_random(), pos, true)
+		_buff_final(boss)
+		boss.drop_chest = i == 0
+		final_bosses.append(boss)
+		final_roster.append(boss.label)
+	intro_text = "大王來襲"
+	final_intro = FINAL_INTRO_TIME
+	_intro_shown = 0
+	_show_big_banner("", COLOR_ENEMY_BOSS)
+	_shake(12.0)
+	hud_final_hint.text = "第 %d 波：打倒全部大王！" % wave_num
+	final_hint_time = FINAL_HINT_TIME
+
+
 # ---------- 敵人 ----------
 
 func _spawn_enemies(delta: float) -> void:
 	# 每分鐘來一隻王
-	if not final_phase and elapsed >= next_boss_time and next_boss_time < GAME_DURATION:
+	if not final_phase and elapsed >= next_boss_time and (next_boss_time < GAME_DURATION or _endless()):
 		next_boss_time += BOSS_INTERVAL
 		var bp := _find_spawn_point()
 		if bp != Vector2.INF:
@@ -1355,7 +1476,8 @@ func _spawn_enemies(delta: float) -> void:
 	spawn_cd -= delta
 	if spawn_cd > 0.0:
 		return
-	spawn_cd = lerpf(SPAWN_INTERVAL_START, SPAWN_INTERVAL_END, minf(elapsed / GAME_DURATION, 1.0))
+	var ramp := ENDLESS_SPAWN_RAMP if _endless() else GAME_DURATION
+	spawn_cd = lerpf(SPAWN_INTERVAL_START, SPAWN_INTERVAL_END, minf(elapsed / ramp, 1.0))
 	spawn_cd /= DIFFICULTIES[difficulty].count   # 數量多 = 生得快
 	var pos := _find_spawn_point()
 	if pos == Vector2.INF:
@@ -1363,7 +1485,7 @@ func _spawn_enemies(delta: float) -> void:
 	var kind := _pick_enemy_type()
 	if kind == "鼠" or kind == "鳥":
 		var group := RAT_GROUP if kind == "鼠" else BIRD_GROUP
-		if kind == "鼠" and DIFFICULTIES[difficulty].get("hell", false):
+		if kind == "鼠" and (DIFFICULTIES[difficulty].get("hell", false) or hell_active.has("鼠")):
 			group = HELL_RAT_GROUP
 		for i in group:
 			var p := pos + Vector2(randf_range(-12, 12), randf_range(-12, 12))
@@ -1487,7 +1609,8 @@ func _pick_enemy_type() -> String:
 
 ## 怪物血量倍率：隨時間成長 × 難度
 func _hp_mult() -> float:
-	return (1.0 + HP_GROWTH_PER_MINUTE * floorf(elapsed / 60.0)) * DIFFICULTIES[difficulty].hp
+	var growth := ENDLESS_HP_GROWTH if _endless() else HP_GROWTH_PER_MINUTE
+	return (1.0 + growth * floorf(elapsed / 60.0)) * DIFFICULTIES[difficulty].hp
 
 
 func _spawn_enemy(kind: String, pos: Vector2) -> void:
@@ -1498,7 +1621,7 @@ func _spawn_enemy(kind: String, pos: Vector2) -> void:
 	e.shoot_interval = ARROW_INTERVAL
 	e.arrow_speed = ARROW_SPEED
 	e.shoot_cd = randf() * ARROW_INTERVAL
-	if DIFFICULTIES[difficulty].get("hell", false):
+	if DIFFICULTIES[difficulty].get("hell", false) or hell_active.has(kind):
 		_make_hell(e)
 	add_child(e)
 	enemies.append(e)
@@ -1905,7 +2028,7 @@ func _kill_enemy(e: Enemy) -> void:
 	cell.erase(e)
 	_shatter(e)
 	# 決戰中一樣掉金，但王不掉寶箱
-	if e.is_boss and not final_phase:
+	if e.is_boss and not final_phase and (not _endless() or e.drop_chest):
 		_spawn_chest_near(e.position)
 	for i in e.gold:
 		var spread := Vector2.ZERO if e.gold == 1 else Vector2(randf_range(-20, 20), randf_range(-20, 20))
@@ -2753,7 +2876,7 @@ func _update_feedback(delta: float) -> void:
 
 func _update_chests() -> void:
 	if not final_phase and elapsed >= next_chest_time:
-		next_chest_time += CHEST_INTERVAL
+		next_chest_time += ENDLESS_CHEST_INTERVAL if _endless() else CHEST_INTERVAL
 		_spawn_chest()
 
 	for i in range(chests.size() - 1, -1, -1):
@@ -2984,7 +3107,6 @@ func _edge_point(target: Vector2, margin := 40.0) -> Vector2:
 
 const FINAL_HINT_TIME := 4.0        # 決戰開始的提示顯示幾秒
 const FINAL_INTRO_TIME := 2.8       # 最終決戰開場停幾秒
-const INTRO_TEXT := "最終決戰"
 const INTRO_CHAR_GAP := 0.5         # 每隔幾秒多跳出一個字（4 個字 1.5 秒出完，再停一下）
 const CELEBRATE_TIME := 3.0         # 過關煙火放幾秒
 const FIREWORK_GAP := 0.22          # 每隔幾秒放一朵
@@ -3364,6 +3486,21 @@ func _build_hud() -> void:
 	big_banner.visible = false
 	root.add_child(big_banner)
 
+	hud_notice = RichTextLabel.new()
+	hud_notice.bbcode_enabled = true
+	hud_notice.fit_content = true
+	hud_notice.scroll_active = false
+	hud_notice.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	hud_notice.custom_minimum_size = Vector2(1400, 0)
+	hud_notice.position = Vector2(-700, 190)
+	hud_notice.add_theme_font_override("normal_font", font)
+	hud_notice.add_theme_font_size_override("normal_font_size", 44)
+	hud_notice.add_theme_constant_override("outline_size", 12)
+	hud_notice.add_theme_color_override("font_outline_color", Color.BLACK)
+	hud_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud_notice.visible = false
+	root.add_child(hud_notice)
+
 	hud_final_hint = Label.new()
 	hud_final_hint.text = "打倒全部最終王！"
 	hud_final_hint.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -3491,14 +3628,14 @@ func _update_hud() -> void:
 	if revives > 0:
 		line_texts.append("蘇 ×%d" % revives)
 	hud_power.text = "　".join(line_texts)
-	if final_phase:
+	if final_phase or wave_active:
 		var counts := {}
 		for b in final_bosses:
 			counts[b.label] = counts.get(b.label, 0) + 1
 		var parts := []
 		for k: String in counts:
 			parts.append("%s ×%d" % [k, counts[k]])
-		hud_time.text = "決戰　" + "　".join(parts)
+		hud_time.text = ("第 %d 波　" % wave_num if wave_active else "決戰　") + "　".join(parts)
 		hud_time.add_theme_color_override("font_color", COLOR_ENEMY_BOSS)
 		_update_boss_bars()
 		# 「打倒全部最終王！」顯示幾秒，最後一秒淡出
@@ -3506,6 +3643,12 @@ func _update_hud() -> void:
 		hud_final_hint.modulate.a = clampf(final_hint_time, 0.0, 1.0)
 		final_frame.visible = true
 		final_frame.queue_redraw()
+	elif _endless():
+		hud_time.text = "存活 " + _fmt_time(elapsed)
+		hud_time.remove_theme_color_override("font_color")
+		hud_boss.visible = false
+		hud_final_hint.visible = false
+		final_frame.visible = false
 	else:
 		hud_time.text = _fmt_time(GAME_DURATION - elapsed)
 	hud_kills.text = "級 %d　金 %d/%d　擊倒 %d\n敵血 ×%.1f" % [level, xp, _xp_needed(), kills, _hp_mult()]
@@ -3525,10 +3668,17 @@ func _end(result: State) -> void:
 		if not death_cause.is_empty():
 			title_parts = death_cause   # 「被[牛]撞飛了」，敵人的字上色
 	if tokens_earned < 0:
-		tokens_earned = Meta.tokens_for_run(elapsed, result == State.WON)
+		tokens_earned = Meta.tokens_for_run(elapsed, result == State.WON, _endless())
+		if _endless():
+			new_record = elapsed > Meta.endless_best
+			if new_record:
+				Meta.endless_best = elapsed
 		Meta.tokens += tokens_earned
 		Meta.save()
 	var stats := "難度 %s　存活 %s　級 %d　擊倒 %d　金 %d　鑽 +%d（共 %d）" % [DIFFICULTIES[difficulty].name, _fmt_time(elapsed), level, kills, gold, tokens_earned, Meta.tokens]
+	if _endless():
+		var rec := "新紀錄！" if new_record else "最高 " + _fmt_time(Meta.endless_best)
+		stats = "無盡　存活 %s（%s）　第 %d 波　級 %d　擊倒 %d　鑽 +%d（共 %d）" % [_fmt_time(elapsed), rec, wave_num, level, kills, tokens_earned, Meta.tokens]
 	# 手機：要點「再來一局」按鈕才重開（避免手指誤觸直接跳過）；電腦維持原本按 Space / Enter
 	if is_touch:
 		level_cards.show_cards(title, _final_level_cards(), -1, "", stats, [], "再來一局")

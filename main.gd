@@ -917,7 +917,6 @@ const ENDLESS_HP_GROWTH := 0.15       # 怪物血量每一階 +15%（不會停�
 const ENDLESS_SPAWN_RAMP := 600.0     # 出怪速度到第 10 分鐘封頂
 const ENDLESS_CHEST_INTERVAL := 45.0  # 自動寶箱每 45 秒一個
 const ENDLESS_WAVE_EVERY := 120.0     # 每 2 分鐘一波大王，第 N 波 N 隻，只有第一隻掉寶箱
-const ENDLESS_WAVE_NO_CHEST := 480.0  # 8 分鐘（含）以後的大王不掉寶箱
 const ENDLESS_WAVE_MID_TIME := 540.0  # 9 分鐘起每 1 分鐘一波
 const ENDLESS_WAVE_MID := 60.0
 const ENDLESS_WAVE_FAST_TIME := 720.0 # 12 分鐘起每 30 秒一波
@@ -1438,7 +1437,7 @@ func _update_endless(delta: float) -> void:
 	if elapsed >= next_wave_time:
 		var w := next_wave_time
 		next_wave_time = _next_wave_after(w)
-		_start_wave(w < ENDLESS_WAVE_NO_CHEST)
+		_start_wave(true)
 	if wave_active and final_bosses.is_empty():
 		wave_active = false
 		audio.play_music(_base_music())
@@ -1494,7 +1493,7 @@ func _start_wave(chest := true) -> void:
 			pos = player.position + Vector2.from_angle(TAU * i / wave_num) * get_viewport_rect().size.x * 0.55
 		var boss := _spawn_boss(bigs.pick_random(), pos, true)
 		_buff_final(boss)
-		boss.drop_chest = chest and i == 0   # 8 分鐘以後的大王不掉寶箱
+		boss.drop_chest = chest and i == 0   # 每一波只有第一隻掉寶箱
 		final_bosses.append(boss)
 		final_roster.append(boss.label)
 	intro_text = "大王來襲"
@@ -2927,8 +2926,7 @@ func _update_feedback(delta: float) -> void:
 # ---------- 寶箱 ----------
 
 func _update_chests() -> void:
-	# 無盡 8 分鐘以後：自動寶箱也不再出現
-	if not final_phase and elapsed >= next_chest_time and not (_endless() and elapsed >= ENDLESS_WAVE_NO_CHEST):
+	if not final_phase and elapsed >= next_chest_time:
 		next_chest_time += ENDLESS_CHEST_INTERVAL if _endless() else CHEST_INTERVAL
 		_spawn_chest()
 
